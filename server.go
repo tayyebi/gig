@@ -15,6 +15,7 @@ import (
 
 	"github.com/tayyebi/gig/config"
 	"github.com/tayyebi/gig/handlers"
+	"github.com/tayyebi/gig/services"
 	"github.com/tayyebi/gig/store"
 )
 
@@ -27,11 +28,26 @@ type Server struct {
 }
 
 func newServer(cfg *config.Config, log *slog.Logger, st *store.Store) *Server {
+	var mailer services.Mailer = &services.LogMailer{Log: log}
+	if cfg.SMTPHost != "" {
+		mailer = services.NewSMTPMailer(services.SMTPConfig{
+			Host: cfg.SMTPHost,
+			Port: cfg.SMTPPort,
+			User: cfg.SMTPUser,
+			Pass: cfg.SMTPPass,
+			From: cfg.EmailFrom,
+		}, log)
+	}
 	return &Server{
-		cfg:      cfg,
-		log:      log,
-		store:    st,
-		handlers: handlers.New(handlers.Options{Store: st, Log: log, Cfg: cfg}),
+		cfg:   cfg,
+		log:   log,
+		store: st,
+		handlers: handlers.New(handlers.Options{
+			Store:  st,
+			Log:    log,
+			Cfg:    cfg,
+			Mailer: mailer,
+		}),
 	}
 }
 
@@ -44,7 +60,7 @@ func (s *Server) handler() http.Handler {
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
-	mux.Handle("/", s.handlers.Routes())
+	mux.Handle("/", s.handlers.Chain(s.handlers.Routes()))
 
 	var h http.Handler = mux
 	h = s.withRequestID(h)

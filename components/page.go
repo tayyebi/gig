@@ -29,6 +29,7 @@ type PageData struct {
 	Description string
 	Canonical   string
 	MetaRefresh int // seconds; 0 disables the refresh meta tag
+	CSRF        string
 	Body        template.HTML
 	User        *User
 	Flash       *Flash

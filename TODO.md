@@ -74,30 +74,30 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 
 ### Password and accounts
 
-- [ ] Implement argon2id password hashing and verification
-- [ ] Implement email verification flow with token expiry
-- [ ] Implement password reset flow
+- [x] Implement argon2id password hashing and verification
+- [x] Implement email verification flow with token expiry
+- [x] Implement password reset flow
 - [ ] Implement TOTP MFA enrollment and verification
-- [ ] Implement constant-time comparison utilities
+- [x] Implement constant-time comparison utilities
 
 ### Sessions and CSRF
 
-- [ ] Implement PostgreSQL-backed session table (token hash, expiry, UA, IP, revocation)
-- [ ] Implement session cookie with `HttpOnly`, `Secure`, `SameSite=Lax`
-- [ ] Implement session rotation on privilege change
-- [ ] Implement logout with server-side revocation
-- [ ] Implement CSRF token generation, storage, and verification on all state-changing forms
+- [x] Implement PostgreSQL-backed session table (token hash, expiry, UA, IP, revocation)
+- [x] Implement session cookie with `HttpOnly`, `Secure`, `SameSite=Lax`
+- [x] Implement session rotation on privilege change
+- [x] Implement logout with server-side revocation
+- [x] Implement CSRF token generation, storage, and verification on all state-changing forms
 
 ### Authorization
 
-- [ ] Implement roles and permissions model (`UserRole`)
+- [x] Implement roles and permissions model (`UserRole`)
 - [ ] Implement authorization middleware for buyer, seller, and admin routes
-- [ ] Implement rate limiting for auth, messaging, checkout, uploads, wallet changes
+- [x] Implement rate limiting for auth, messaging, checkout, uploads, wallet changes
 
 ### Headers and audit
 
-- [ ] Send security headers: CSP `script-src 'none'`, `Referrer-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Permissions-Policy`
-- [ ] Implement `AuditLog` recording of privileged actions
+- [x] Send security headers: CSP `script-src 'none'`, `Referrer-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Permissions-Policy`
+- [x] Implement `AuditLog` recording of privileged actions
 - [ ] Build basic account settings pages (profile, email, password, MFA)
 
 ## Phase 3: Marketplace Core

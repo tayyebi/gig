@@ -42,6 +42,21 @@ type Config struct {
 	CSRFSecret        string
 	CookieSecure      bool
 
+	// Auth security
+	AuthRateLimit    int
+	AuthRateWindow   time.Duration
+	AuthTokenTTL     time.Duration
+	MaxLoginAttempts int
+	LoginLockout     time.Duration
+	TOTPSkew         int
+
+	// Email
+	EmailFrom string
+	SMTPHost  string
+	SMTPPort  string
+	SMTPUser  string
+	SMTPPass  string
+
 	// Storage
 	StorageDir     string
 	UploadMaxBytes int64
@@ -108,6 +123,31 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	if c.AuthRateLimit, err = envInt("AUTH_RATE_LIMIT", 10); err != nil {
+		return nil, err
+	}
+	if c.AuthRateWindow, err = envDuration("AUTH_RATE_WINDOW", 15*time.Minute); err != nil {
+		return nil, err
+	}
+	if c.AuthTokenTTL, err = envDuration("AUTH_TOKEN_TTL", 24*time.Hour); err != nil {
+		return nil, err
+	}
+	if c.MaxLoginAttempts, err = envInt("MAX_LOGIN_ATTEMPTS", 5); err != nil {
+		return nil, err
+	}
+	if c.LoginLockout, err = envDuration("LOGIN_LOCKOUT", 15*time.Minute); err != nil {
+		return nil, err
+	}
+	if c.TOTPSkew, err = envInt("TOTP_SKEW", 1); err != nil {
+		return nil, err
+	}
+
+	c.EmailFrom = env("EMAIL_FROM", "Gig <no-reply@example.com>")
+	c.SMTPHost = env("SMTP_HOST", "")
+	c.SMTPPort = env("SMTP_PORT", "587")
+	c.SMTPUser = env("SMTP_USER", "")
+	c.SMTPPass = env("SMTP_PASS", "")
+
 	if c.StorageDir = env("STORAGE_DIR", "./data"); c.StorageDir == "" {
 		return nil, errRequired("STORAGE_DIR")
 	}
@@ -156,6 +196,15 @@ func (c *Config) validate() error {
 	}
 	if c.UploadMaxBytes < 1 {
 		return fmt.Errorf("UPLOAD_MAX_BYTES must be >= 1")
+	}
+	if c.AuthRateLimit < 1 {
+		return fmt.Errorf("AUTH_RATE_LIMIT must be >= 1")
+	}
+	if c.MaxLoginAttempts < 1 {
+		return fmt.Errorf("MAX_LOGIN_ATTEMPTS must be >= 1")
+	}
+	if c.TOTPSkew < 0 {
+		return fmt.Errorf("TOTP_SKEW cannot be negative")
 	}
 	return nil
 }

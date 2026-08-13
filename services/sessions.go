@@ -1,4 +1,4 @@
-package main
+package services
 
 import (
 	"crypto/rand"
@@ -11,9 +11,9 @@ import (
 	"github.com/tayyebi/gig/config"
 )
 
-// newSessionToken generates a high-entropy raw session token and its SHA-256
-// hash. Only the hash is ever persisted; the raw token is held by the client.
-func newSessionToken() (raw, hash string, err error) {
+// GenerateSessionToken creates a high-entropy raw session token and its
+// SHA-256 hash. Only the hash is persisted; the raw token lives in the cookie.
+func GenerateSessionToken() (raw, hash string, err error) {
 	buf := make([]byte, 32)
 	if _, err := rand.Read(buf); err != nil {
 		return "", "", fmt.Errorf("generate session token: %w", err)
@@ -23,8 +23,8 @@ func newSessionToken() (raw, hash string, err error) {
 	return raw, fmt.Sprintf("%x", sum[:]), nil
 }
 
-// sessionCookie builds the session cookie with secure defaults.
-func sessionCookie(cfg *config.Config, value string, ttl time.Duration) *http.Cookie {
+// SessionCookie builds the session cookie with secure defaults.
+func SessionCookie(cfg *config.Config, value string, ttl time.Duration) *http.Cookie {
 	return &http.Cookie{
 		Name:     cfg.SessionCookieName,
 		Value:    value,
@@ -36,8 +36,8 @@ func sessionCookie(cfg *config.Config, value string, ttl time.Duration) *http.Co
 	}
 }
 
-// clearCookie returns a cookie that expires immediately, used on logout.
-func clearCookie(cfg *config.Config) *http.Cookie {
+// ClearSessionCookie returns an expiring cookie that deletes the session.
+func ClearSessionCookie(cfg *config.Config) *http.Cookie {
 	return &http.Cookie{
 		Name:     cfg.SessionCookieName,
 		Value:    "",

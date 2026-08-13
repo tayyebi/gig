@@ -4,6 +4,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/tayyebi/gig/services"
 )
 
 func TestConstantTimeEqual(t *testing.T) {
@@ -54,9 +56,9 @@ func TestSecurityHeaders(t *testing.T) {
 }
 
 func TestSessionTokenHashRoundTrip(t *testing.T) {
-	raw, hash, err := newSessionToken()
+	raw, hash, err := services.GenerateSessionToken()
 	if err != nil {
-		t.Fatalf("newSessionToken: %v", err)
+		t.Fatalf("GenerateSessionToken: %v", err)
 	}
 	if raw == hash {
 		t.Error("raw token and hash must never be equal")

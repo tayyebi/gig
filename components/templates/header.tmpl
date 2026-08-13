@@ -6,7 +6,10 @@
     <nav class="header-actions" aria-label="Account">
       {{if .User.IsAdmin}}<a href="/admin">Admin</a>{{end}}
       <a href="/account">Account</a>
-      <a href="/account/logout">Log out</a>
+      <form method="post" action="/logout" class="inline-form">
+        <input type="hidden" name="_csrf" value="{{.CSRF}}">
+        <button type="submit" class="link-button">Log out</button>
+      </form>
     </nav>
     {{else}}
     <nav class="header-actions" aria-label="Account">

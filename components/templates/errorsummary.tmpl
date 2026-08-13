@@ -2,8 +2,8 @@
 <div class="alert alert-error" role="alert">
   <p>Please fix the following:</p>
   <ul>
-  {{range .}}
-    <li><a href="#{{.Anchor}}">{{.Message}}</a></li>
+  {{range $field, $message := .}}
+    <li><a href="#{{fieldid $field}}">{{$message}}</a></li>
   {{end}}
   </ul>
 </div>

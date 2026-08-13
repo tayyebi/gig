@@ -1,0 +1,35 @@
+{{define "csrffield"}}<input type="hidden" name="_csrf" value="{{.}}">{{end}}
+
+{{define "authregister"}}
+<section class="auth">
+  <h1>Create your account</h1>
+  <p class="muted">Buying and selling on the same account. No credit card required to browse.</p>
+  {{template "errorsummary" .Errors}}
+  <form method="post" action="/register" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "name"}}">Name</label>
+      <input id="{{fieldid "name"}}" name="name" type="text" autocomplete="name" value="{{.Values.name}}" required{{if .Errors.name}} aria-invalid="true" aria-describedby="{{fieldid "name"}}-error"{{end}}>
+      {{if .Errors.name}}<p class="field-error" id="{{fieldid "name"}}-error">{{.Errors.name}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="{{fieldid "email"}}">Email</label>
+      <input id="{{fieldid "email"}}" name="email" type="email" autocomplete="email" value="{{.Values.email}}" required{{if .Errors.email}} aria-invalid="true" aria-describedby="{{fieldid "email"}}-error"{{end}}>
+      {{if .Errors.email}}<p class="field-error" id="{{fieldid "email"}}-error">{{.Errors.email}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="{{fieldid "password"}}">Password</label>
+      <input id="{{fieldid "password"}}" name="password" type="password" autocomplete="new-password" minlength="10" required{{if .Errors.password}} aria-invalid="true" aria-describedby="{{fieldid "password"}}-error"{{end}}>
+      <p class="hint">At least 10 characters.</p>
+      {{if .Errors.password}}<p class="field-error" id="{{fieldid "password"}}-error">{{.Errors.password}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="{{fieldid "password_confirm"}}">Confirm password</label>
+      <input id="{{fieldid "password_confirm"}}" name="password_confirm" type="password" autocomplete="new-password" required{{if .Errors.password_confirm}} aria-invalid="true" aria-describedby="{{fieldid "password_confirm"}}-error"{{end}}>
+      {{if .Errors.password_confirm}}<p class="field-error" id="{{fieldid "password_confirm"}}-error">{{.Errors.password_confirm}}</p>{{end}}
+    </div>
+    <button class="btn btn-primary btn-block" type="submit">Create account</button>
+  </form>
+  <p class="muted">Already have an account? <a href="/login">Log in</a></p>
+</section>
+{{end}}

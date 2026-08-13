@@ -7,13 +7,20 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/tayyebi/gig/config"
 )
 
 func newTestServer(t *testing.T) *Server {
 	t.Helper()
-	cfg := &config.Config{BaseURL: "http://localhost:8080"}
+	cfg := &config.Config{
+		BaseURL:           "http://localhost:8080",
+		AuthRateLimit:     100,
+		AuthRateWindow:    time.Minute,
+		SessionTTL:        time.Hour,
+		SessionCookieName: "gig_session",
+	}
 	return New(Options{Log: slog.New(slog.NewTextHandler(io.Discard, nil)), Cfg: cfg})
 }
 

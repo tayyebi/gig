@@ -5,9 +5,11 @@ package store
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/tayyebi/gig/config"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
@@ -83,4 +85,11 @@ func (s *Store) Tx(ctx context.Context, fn func(tx *sql.Tx) error) error {
 		return fmt.Errorf("commit transaction: %w", err)
 	}
 	return nil
+}
+
+// isUniqueViolation reports whether err is a PostgreSQL unique constraint
+// violation (SQLSTATE 23505).
+func isUniqueViolation(err error) bool {
+	var pgErr *pgconn.PgError
+	return errors.As(err, &pgErr) && pgErr.Code == "23505"
 }

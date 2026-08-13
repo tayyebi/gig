@@ -1,0 +1,17 @@
+{{define "authforgot"}}
+<section class="auth">
+  <h1>Reset your password</h1>
+  <p class="muted">Enter the email you registered with and we will send you a reset link.</p>
+  {{template "errorsummary" .Errors}}
+  <form method="post" action="/forgot-password" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "email"}}">Email</label>
+      <input id="{{fieldid "email"}}" name="email" type="email" autocomplete="email" value="{{.Values.email}}" required{{if .Errors.email}} aria-invalid="true" aria-describedby="{{fieldid "email"}}-error"{{end}}>
+      {{if .Errors.email}}<p class="field-error" id="{{fieldid "email"}}-error">{{.Errors.email}}</p>{{end}}
+    </div>
+    <button class="btn btn-primary btn-block" type="submit">Send reset link</button>
+  </form>
+  <p class="muted"><a href="/login">Back to log in</a></p>
+</section>
+{{end}}

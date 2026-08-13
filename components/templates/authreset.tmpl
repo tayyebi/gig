@@ -1,0 +1,22 @@
+{{define "authreset"}}
+<section class="auth">
+  <h1>Choose a new password</h1>
+  {{template "errorsummary" .Errors}}
+  <form method="post" action="/reset-password" novalidate>
+    {{template "csrffield" .CSRF}}
+    {{if .Values.token}}<input type="hidden" name="token" value="{{.Values.token}}">{{end}}
+    <div class="field">
+      <label for="{{fieldid "password"}}">New password</label>
+      <input id="{{fieldid "password"}}" name="password" type="password" autocomplete="new-password" minlength="10" required{{if .Errors.password}} aria-invalid="true" aria-describedby="{{fieldid "password"}}-error"{{end}}>
+      <p class="hint">At least 10 characters.</p>
+      {{if .Errors.password}}<p class="field-error" id="{{fieldid "password"}}-error">{{.Errors.password}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="{{fieldid "password_confirm"}}">Confirm new password</label>
+      <input id="{{fieldid "password_confirm"}}" name="password_confirm" type="password" autocomplete="new-password" required{{if .Errors.password_confirm}} aria-invalid="true" aria-describedby="{{fieldid "password_confirm"}}-error"{{end}}>
+      {{if .Errors.password_confirm}}<p class="field-error" id="{{fieldid "password_confirm"}}-error">{{.Errors.password_confirm}}</p>{{end}}
+    </div>
+    <button class="btn btn-primary btn-block" type="submit">Reset password</button>
+  </form>
+</section>
+{{end}}
