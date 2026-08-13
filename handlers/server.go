@@ -72,6 +72,15 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /reset-password", s.resetPasswordForm)
 	mux.HandleFunc("POST /reset-password", s.resetPassword)
 
+	// Account settings (authenticated).
+	mux.HandleFunc("GET /account", s.requireAuth(s.accountForm))
+	mux.HandleFunc("POST /account", s.requireAuth(s.accountUpdate))
+	mux.HandleFunc("GET /account/password", s.requireAuth(s.passwordForm))
+	mux.HandleFunc("POST /account/password", s.requireAuth(s.passwordUpdate))
+	mux.HandleFunc("GET /account/mfa", s.requireAuth(s.mfaForm))
+	mux.HandleFunc("POST /account/mfa", s.requireAuth(s.mfaEnable))
+	mux.HandleFunc("POST /account/mfa/disable", s.requireAuth(s.mfaDisable))
+
 	return mux
 }
 

@@ -1,0 +1,33 @@
+{{define "accountmfa"}}
+<section class="auth">
+  <h1>Two-factor authentication</h1>
+  {{template "errorsummary" .Errors}}
+
+  {{if .Enabled}}
+  <p>Two-factor authentication is <strong>enabled</strong> on your account. Your authenticator app will be asked for a code when you sign in.</p>
+  <p class="muted">Disabling two-factor authentication lowers the security of your account.</p>
+  <form method="post" action="/account/mfa/disable" novalidate>
+    {{template "csrffield" .CSRF}}
+    <button class="btn btn-danger" type="submit">Disable two-factor authentication</button>
+  </form>
+  {{else}}
+  <ol class="mfa-steps">
+    <li>Install an authenticator app that supports TOTP (for example Google Authenticator, 1Password, or Authy) on your phone.</li>
+    <li>Add this secret key to your app, or scan it using the setup URI below. Store the secret somewhere safe; you will need it to re-add your account to a new device.</li>
+  </ol>
+  <p class="hint">Secret key: <code class="secret">{{.Secret}}</code></p>
+  <p class="hint">Setup URI: <code class="secret">{{.OTPAuth}}</code></p>
+  <form method="post" action="/account/mfa" novalidate>
+    {{template "csrffield" .CSRF}}
+    <input type="hidden" name="secret" value="{{.Secret}}">
+    <div class="field">
+      <label for="{{fieldid "code"}}">Authenticator code</label>
+      <input id="{{fieldid "code"}}" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]{6}" maxlength="6" required{{if .Errors.code}} aria-invalid="true" aria-describedby="{{fieldid "code"}}-error"{{end}}>
+      {{if .Errors.code}}<p class="field-error" id="{{fieldid "code"}}-error">{{.Errors.code}}</p>{{end}}
+    </div>
+    <button class="btn btn-primary" type="submit">Verify and enable</button>
+  </form>
+  {{end}}
+  <p class="muted"><a href="/account">Back to account</a></p>
+</section>
+{{end}}

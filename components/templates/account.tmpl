@@ -1,0 +1,40 @@
+{{define "account"}}
+<section class="account">
+  <h1>Account settings</h1>
+  {{template "errorsummary" .Errors}}
+  <form method="post" action="/account" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "name"}}">Name</label>
+      <input id="{{fieldid "name"}}" name="name" type="text" autocomplete="name" value="{{.Values.name}}" required{{if .Errors.name}} aria-invalid="true" aria-describedby="{{fieldid "name"}}-error"{{end}}>
+      {{if .Errors.name}}<p class="field-error" id="{{fieldid "name"}}-error">{{.Errors.name}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="{{fieldid "email"}}">Email</label>
+      <input id="{{fieldid "email"}}" name="email" type="email" autocomplete="email" value="{{.Values.email}}" required{{if .Errors.email}} aria-invalid="true" aria-describedby="{{fieldid "email"}}-error"{{end}}>
+      {{if .EmailVerified}}<p class="hint">Verified.</p>
+      {{else}}<p class="hint">Not verified. Changing your email sends a new verification link.</p>{{end}}
+      {{if .Errors.email}}<p class="field-error" id="{{fieldid "email"}}-error">{{.Errors.email}}</p>{{end}}
+    </div>
+    <button class="btn btn-primary" type="submit">Save changes</button>
+  </form>
+
+  <h2>Security</h2>
+  <ul class="settings-list">
+    <li>
+      <div>
+        <strong>Password</strong>
+        <p class="muted">Change the password you use to sign in.</p>
+      </div>
+      <a class="btn" href="/account/password">Change</a>
+    </li>
+    <li>
+      <div>
+        <strong>Two-factor authentication</strong>
+        <p class="muted">{{if .TotpEnabled}}Enabled. Authenticator codes are required to log in.{{else}}Not enabled. Add an authenticator app for extra protection.{{end}}</p>
+      </div>
+      <a class="btn" href="/account/mfa">{{if .TotpEnabled}}Manage{{else}}Enable{{end}}</a>
+    </li>
+  </ul>
+</section>
+{{end}}

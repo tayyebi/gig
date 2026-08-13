@@ -235,6 +235,175 @@ func TestLoginFlowAndSessionRotation(t *testing.T) {
 	}
 }
 
+func TestAccountUpdateProfile(t *testing.T) {
+	a := newAuthServer(t)
+	csrf := a.csrf(t, "/register")
+	a.req(t, http.MethodPost, "/register",
+		"name=ProfileUser&email=profile@example.com&password=password123&password_confirm=password123&_csrf="+csrf)
+
+	csrf = a.csrf(t, "/account")
+	rec := a.req(t, http.MethodPost, "/account",
+		"name=Updated+Name&email=profile@example.com&_csrf="+csrf)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("update profile = %d, want 303", rec.Code)
+	}
+	// Confirm the flash message.
+	rec = a.req(t, http.MethodGet, "/account", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /account = %d", rec.Code)
+	}
+	if !strings.Contains(rec.Body.String(), "Your account was updated") {
+		t.Errorf("expected update flash")
+	}
+}
+
+func TestAccountEmailChange(t *testing.T) {
+	a := newAuthServer(t)
+	csrf := a.csrf(t, "/register")
+	a.req(t, http.MethodPost, "/register",
+		"name=EmailChg&email=emailchg@example.com&password=password123&password_confirm=password123&_csrf="+csrf)
+
+	csrf = a.csrf(t, "/account")
+	rec := a.req(t, http.MethodPost, "/account",
+		"name=EmailChg&email=newaddr@example.com&_csrf="+csrf)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("update email = %d, want 303", rec.Code)
+	}
+	// Verify email becomes unverified.
+	body := a.req(t, http.MethodGet, "/account", "").Body.String()
+	if strings.Contains(body, "Verified.") {
+		t.Errorf("expected email to be unverified after change")
+	}
+}
+
+func TestPasswordChange(t *testing.T) {
+	a := newAuthServer(t)
+	csrf := a.csrf(t, "/register")
+	a.req(t, http.MethodPost, "/register",
+		"name=PassChg&email=passchg@example.com&password=password123&password_confirm=password123&_csrf="+csrf)
+
+	csrf = a.csrf(t, "/account/password")
+	rec := a.req(t, http.MethodPost, "/account/password",
+		"current_password=password123&new_password=newpassword456&new_password_confirm=newpassword456&_csrf="+csrf)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("change password = %d, want 303", rec.Code)
+	}
+	// Log out, then log in with the new password.
+	csrf = a.csrf(t, "/")
+	a.req(t, http.MethodPost, "/logout", "_csrf="+csrf)
+	csrf = a.csrf(t, "/login")
+	rec = a.req(t, http.MethodPost, "/login",
+		"email=passchg@example.com&password=newpassword456&_csrf="+csrf)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("login with new password = %d, want 303", rec.Code)
+	}
+	// Old password no longer works.
+	csrf = a.csrf(t, "/")
+	a.req(t, http.MethodPost, "/logout", "_csrf="+csrf)
+	csrf = a.csrf(t, "/login")
+	rec = a.req(t, http.MethodPost, "/login",
+		"email=passchg@example.com&password=password123&_csrf="+csrf)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("login with old password = %d, want 422", rec.Code)
+	}
+}
+
+func TestMFAEnrollmentAndLogin(t *testing.T) {
+	a := newAuthServer(t)
+	csrf := a.csrf(t, "/register")
+	a.req(t, http.MethodPost, "/register",
+		"name=MFAUser&email=mfa@example.com&password=password123&password_confirm=password123&_csrf="+csrf)
+
+	// Visit MFA page and extract the secret from the hidden field.
+	body := a.req(t, http.MethodGet, "/account/mfa", "").Body.String()
+	idx := strings.Index(body, `name="secret" value="`)
+	if idx < 0 {
+		t.Fatalf("no hidden secret field in MFA page")
+	}
+	rest := body[idx+len(`name="secret" value="`):]
+	secret := rest[:strings.Index(rest, `"`)]
+
+	// Generate a valid TOTP code.
+	code, err := services.TOTPCode(secret, time.Now())
+	if err != nil {
+		t.Fatalf("TOTPCode: %v", err)
+	}
+
+	csrf = a.csrf(t, "/account/mfa")
+	rec := a.req(t, http.MethodPost, "/account/mfa",
+		"secret="+secret+"&code="+code+"&_csrf="+csrf)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("enable MFA = %d, want 303", rec.Code)
+	}
+	// MFA page should now show "enabled" state.
+	body = a.req(t, http.MethodGet, "/account/mfa", "").Body.String()
+	if !strings.Contains(body, "enabled") {
+		t.Errorf("expected MFA enabled message")
+	}
+
+	// Log out and log back in; TOTP code is now required.
+	csrf = a.csrf(t, "/")
+	a.req(t, http.MethodPost, "/logout", "_csrf="+csrf)
+	csrf = a.csrf(t, "/login")
+	rec = a.req(t, http.MethodPost, "/login",
+		"email=mfa@example.com&password=password123&_csrf="+csrf)
+	if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), "authenticator code") {
+		t.Fatalf("login without TOTP = %d, want 422 asking for code", rec.Code)
+	}
+	code, _ = services.TOTPCode(secret, time.Now())
+	csrf = a.csrf(t, "/login")
+	rec = a.req(t, http.MethodPost, "/login",
+		"email=mfa@example.com&password=password123&totp_code="+code+"&_csrf="+csrf)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("login with TOTP = %d, want 303", rec.Code)
+	}
+
+	// Disable MFA.
+	csrf = a.csrf(t, "/account/mfa")
+	rec = a.req(t, http.MethodPost, "/account/mfa/disable", "_csrf="+csrf)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("disable MFA = %d, want 303", rec.Code)
+	}
+	// Verify MFA is off.
+	body = a.req(t, http.MethodGet, "/account/mfa", "").Body.String()
+	if strings.Contains(body, "enabled") {
+		t.Errorf("expected MFA to be disabled")
+	}
+}
+
+func TestMaintenanceSweepHandler(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set")
+	}
+	ctx := context.Background()
+	cfg := &config.Config{
+		DatabaseURL:         dsn,
+		DBMaxOpenConns:      2,
+		DBMaxIdleConns:      1,
+		DBConnMaxLifetime:   time.Minute,
+		MaintenanceInterval: time.Hour,
+		JobMaxAttempts:      1,
+	}
+	st, err := store.Open(ctx, cfg)
+	if err != nil {
+		t.Fatalf("store.Open: %v", err)
+	}
+	defer st.Close()
+
+	// Enqueue an expired token and an expired session to verify cleanup.
+	_, _ = st.EnqueueJob(ctx, "test.skip", nil, time.Now(), 1)
+	expiredSessions, err := st.DeleteExpiredSessions(ctx)
+	if err != nil {
+		t.Fatalf("DeleteExpiredSessions: %v", err)
+	}
+	expiredTokens, err := st.DeleteExpiredAuthTokens(ctx)
+	if err != nil {
+		t.Fatalf("DeleteExpiredAuthTokens: %v", err)
+	}
+	t.Logf("expired sessions=%d tokens=%d", expiredSessions, expiredTokens)
+}
+
 func TestLoginWrongPassword(t *testing.T) {
 	a := newAuthServer(t)
 	csrf := a.csrf(t, "/register")

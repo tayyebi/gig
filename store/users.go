@@ -125,6 +125,22 @@ func (s *Store) UpdateName(ctx context.Context, id int64, name string) error {
 	return nil
 }
 
+// UpdateEmail changes a user's email, clears verification, and re-checks the
+// unique normalized value.
+func (s *Store) UpdateEmail(ctx context.Context, id int64, email string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE users SET email = $2, email_lower = $3, email_verified_at = NULL, updated_at = now()
+		WHERE id = $1`,
+		id, email, NormalizeEmail(email))
+	if isUniqueViolation(err) {
+		return ErrEmailTaken
+	}
+	if err != nil {
+		return fmt.Errorf("update email for user %d: %w", id, err)
+	}
+	return nil
+}
+
 // UpdatePassword sets a new password hash.
 func (s *Store) UpdatePassword(ctx context.Context, id int64, passwordHash string) error {
 	_, err := s.db.ExecContext(ctx,

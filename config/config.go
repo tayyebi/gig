@@ -68,6 +68,9 @@ type Config struct {
 	JobStaleThreshold time.Duration
 	JobConcurrency    int
 
+	// Maintenance
+	MaintenanceInterval time.Duration
+
 	// Lifecycle
 	ShutdownTimeout time.Duration
 }
@@ -169,6 +172,13 @@ func Load() (*Config, error) {
 	}
 	if c.JobConcurrency, err = envInt("JOB_CONCURRENCY", 4); err != nil {
 		return nil, err
+	}
+
+	if c.MaintenanceInterval, err = envDuration("MAINTENANCE_INTERVAL", 10*time.Minute); err != nil {
+		return nil, err
+	}
+	if c.MaintenanceInterval < 30*time.Second {
+		return nil, fmt.Errorf("MAINTENANCE_INTERVAL must be at least 30s")
 	}
 
 	if c.ShutdownTimeout, err = envDuration("SHUTDOWN_TIMEOUT", 15*time.Second); err != nil {

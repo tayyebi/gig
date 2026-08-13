@@ -8,6 +8,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 )
@@ -48,8 +49,13 @@ func TOTPCode(secret string, t time.Time) (string, error) {
 	return fmt.Sprintf("%06d", code%1_000_000), nil
 }
 
+// OTPAuthURI builds a standard otpauth:// setup URI for a label and issuer.
+func OTPAuthURI(secret, account, issuer string) string {
+	return fmt.Sprintf("otpauth://totp/%s?secret=%s&issuer=%s&algorithm=SHA1&digits=6&period=30",
+		url.QueryEscape(account), secret, url.QueryEscape(issuer))
+}
+
 // VerifyTOTP checks a user-supplied code allowing skew steps before and after
-// the current window. It is constant-time against the expected codes.
 func VerifyTOTP(secret, code string, skew int) (bool, error) {
 	if skew < 0 {
 		skew = 0

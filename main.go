@@ -80,5 +80,8 @@ func runWorker(cfg *config.Config, log *slog.Logger) error {
 	defer st.Close()
 
 	q := newJobQueue(cfg, log, st)
+	if err := registerMaintenance(q, &jobContext{Store: st, Log: log, Cfg: cfg}); err != nil {
+		return fmt.Errorf("register maintenance jobs: %w", err)
+	}
 	return q.Run(ctx)
 }
