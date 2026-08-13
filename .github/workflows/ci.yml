@@ -1,0 +1,45 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  lint-and-test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: gig
+          POSTGRES_PASSWORD: gig
+          POSTGRES_DB: gig_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gig -d gig_test"
+          --health-interval 2s
+          --health-timeout 3s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26"
+          cache: true
+      - name: Format check
+        run: test -z "$(gofmt -l .)"
+      - name: Vet
+        run: go vet ./...
+      - name: Build
+        run: go build ./...
+      - name: Unit tests
+        run: go test ./...
+      - name: Integration tests (store)
+        env:
+          TEST_DATABASE_URL: postgres://gig:gig@localhost:5432/gig_test?sslmode=disable
+        run: go test ./store/... -count=1

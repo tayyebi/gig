@@ -1,0 +1,9 @@
+{{define "bottomnav"}}
+<nav class="bottomnav" aria-label="Primary">
+  <a href="/" class="bn-item" aria-label="Home">Home</a>
+  <a href="/search" class="bn-item" aria-label="Search">Search</a>
+  <a href="/orders" class="bn-item" aria-label="Orders">Orders</a>
+  <a href="/messages" class="bn-item" aria-label="Messages">Messages{{if gt .User.UnreadCount 0}} ({{.User.UnreadCount}}){{end}}</a>
+  <a href="/account" class="bn-item" aria-label="Account">Account</a>
+</nav>
+{{end}}

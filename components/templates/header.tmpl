@@ -1,0 +1,19 @@
+{{define "header"}}
+<header class="site-header">
+  <div class="container header-inner">
+    <a class="brand" href="/" aria-label="Gig home">Gig</a>
+    {{if .User}}
+    <nav class="header-actions" aria-label="Account">
+      {{if .User.IsAdmin}}<a href="/admin">Admin</a>{{end}}
+      <a href="/account">Account</a>
+      <a href="/account/logout">Log out</a>
+    </nav>
+    {{else}}
+    <nav class="header-actions" aria-label="Account">
+      <a href="/login">Log in</a>
+      <a class="btn btn-primary" href="/register">Sign up</a>
+    </nav>
+    {{end}}
+  </div>
+</header>
+{{end}}

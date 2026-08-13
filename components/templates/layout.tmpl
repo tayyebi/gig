@@ -1,0 +1,27 @@
+{{define "layout"}}
+<!DOCTYPE html>
+<html lang="{{.Lang}}" dir="{{.Dir}}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+{{if .Description}}<meta name="description" content="{{.Description}}">{{end}}
+{{if .Canonical}}<link rel="canonical" href="{{.Canonical}}">{{end}}
+{{if gt .MetaRefresh 0}}<meta http-equiv="refresh" content="{{.MetaRefresh}}">{{end}}
+<title>{{.Title}}</title>
+<link rel="icon" href="/static/favicon.ico" sizes="any">
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/app.css">
+</head>
+<body>
+{{template "header" .}}
+<main id="main">
+<div class="container">
+{{if .Flash}}<div class="flash flash-{{.Flash.Kind}}" role="status">{{.Flash.Text}}</div>{{end}}
+</div>
+{{.Body}}
+</main>
+{{template "footer" .}}
+{{if .User}}{{template "bottomnav" .}}{{end}}
+</body>
+</html>
+{{end}}

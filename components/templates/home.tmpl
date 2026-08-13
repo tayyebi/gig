@@ -1,0 +1,31 @@
+{{define "home"}}
+<section class="container hero">
+  <h1>Find the right freelancer for your project</h1>
+  <p>Browse gigs, get work done, and pay securely when you are satisfied.</p>
+  <form action="/search" method="get" role="search">
+    <label for="q">Search gigs</label>
+    <div class="search-row">
+      <input type="search" id="q" name="q" placeholder="Try &ldquo;logo design&rdquo;" autocomplete="off" inputmode="search">
+      <button type="submit" class="btn btn-primary">Search</button>
+    </div>
+  </form>
+</section>
+
+<section class="container">
+  <h2>Popular categories</h2>
+  {{if .Categories}}
+  <ul class="card-grid">
+    {{range .Categories}}
+    <li>
+      <a class="card" href="/browse/{{.Slug}}">
+        <h3>{{.Name}}</h3>
+        <p>{{.Blurb}}</p>
+      </a>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p>Categories are coming soon.</p>
+  {{end}}
+</section>
+{{end}}

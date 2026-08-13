@@ -1,0 +1,10 @@
+{{define "pagination"}}
+{{$cur := .Current}}{{$last := .Last}}
+<nav class="pagination" aria-label="Pagination">
+  {{if gt .Current 1}}<a rel="prev" href="{{.URLFor .Prev}}">Previous</a>{{end}}
+  {{range .Pages}}
+    <a href="{{$.URLFor .}}" {{if eq . $cur}}aria-current="page"{{end}}>{{.}}</a>
+  {{end}}
+  {{if lt .Current $last}}<a rel="next" href="{{.URLFor .Next}}">Next</a>{{end}}
+</nav>
+{{end}}

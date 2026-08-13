@@ -25,50 +25,50 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 
 ### Project scaffold
 
-- [ ] Initialize Go module (`go mod init`)
-- [ ] Create flat root layout: `components/`, `handlers/`, `services/`, `store/`, `providers/`, `ledger/`, `migrations/`, `static/`, `scripts/`, `testdata/`
-- [ ] Create root files: `main.go`, `config.go`, `server.go`, `routes.go`, `sessions.go`, `security.go`, `jobs.go`, `logger.go`
-- [ ] Implement `APP_ROLE` dispatch in `main.go` for `web` and `worker`
-- [ ] Add `Makefile` with build, test, lint, run targets
-- [ ] Add `README.md` with run instructions
-- [ ] Add `.env.example` with placeholder values only
-- [ ] Add `.gitignore` for secrets, build artifacts, and local state
+- [x]  Initialize Go module (`go mod init`)
+- [x]  Create flat root layout: `components/`, `handlers/`, `services/`, `store/`, `providers/`, `ledger/`, `migrations/`, `static/`, `scripts/`, `testdata/`
+- [x]  Create root files: `main.go`, `config.go`, `server.go`, `routes.go`, `sessions.go`, `security.go`, `jobs.go`, `logger.go`
+- [x]  Implement `APP_ROLE` dispatch in `main.go` for `web` and `worker`
+- [x]  Add `Makefile` with build, test, lint, run targets
+- [x]  Add `README.md` with run instructions
+- [x]  Add `.env.example` with placeholder values only
+- [x]  Add `.gitignore` for secrets, build artifacts, and local state
 
 ### Docker Compose
 
-- [ ] Write `Dockerfile` (multi-stage Go build, minimal runtime image)
-- [ ] Write `docker-compose.yml` with `db`, `web`, and `worker` services
-- [ ] Put `db` and `app` on a dedicated internal network with no external exposure
-- [ ] Add `db` healthcheck and depend on health, not ordering alone
-- [ ] Add volume for local PostgreSQL data
-- [ ] Configure `web` to run migrations at startup before serving
-- [ ] Verify internal network resolution of `DATABASE_URL`
+- [x]  Write `Dockerfile` (multi-stage Go build, minimal runtime image)
+- [x]  Write `docker-compose.yml` with `db`, `web`, and `worker` services
+- [x]  Put `db` and `app` on a dedicated internal network with no external exposure
+- [x]  Add `db` healthcheck and depend on health, not ordering alone
+- [x]  Add volume for local PostgreSQL data
+- [x]  Configure `web` to run migrations at startup before serving
+- [x]  Verify internal network resolution of `DATABASE_URL`
 
 ### Migrations
 
-- [ ] Embed `migrations/*.sql` via `embed`
-- [ ] Implement startup migration runner with advisory lock
-- [ ] Implement schema-version tracking table
-- [ ] Verify single-instance migration under contention
-- [ ] Add migration smoke test against a dockerized database
+- [x]  Embed `migrations/*.sql` via `embed`
+- [x]  Implement startup migration runner with advisory lock
+- [x]  Implement schema-version tracking table
+- [x]  Verify single-instance migration under contention
+- [x]  Add migration smoke test against a dockerized database
 
 ### Config, logging, health
 
-- [ ] Implement environment parsing with validation
-- [ ] Implement structured JSON logging to stdout
-- [ ] Implement `/healthz` and `/readyz` endpoints
-- [ ] Implement graceful shutdown for web and worker
-- [ ] Set up linting (`go vet`, `staticcheck`) and CI
-- [ ] Set up formatting and test commands in CI
+- [x]  Implement environment parsing with validation
+- [x]  Implement structured JSON logging to stdout
+- [x]  Implement `/healthz` and `/readyz` endpoints
+- [x]  Implement graceful shutdown for web and worker
+- [x]  Set up linting (`go vet`, `staticcheck`) and CI
+- [x]  Set up formatting and test commands in CI
 
 ### Styling and shell
 
-- [ ] Write `static/app.css` with CSS custom properties and mobile-first media queries
-- [ ] Build the base layout component (`<html lang dir>`, head, header, main, footer)
-- [ ] Add semantic base templates and empty-state components
-- [ ] Add mobile bottom-navigation shell
-- [ ] Add server-side pagination component for listings
-- [ ] Add favicon and static asset serving
+- [x]  Write `static/app.css` with CSS custom properties and mobile-first media queries
+- [x]  Build the base layout component (`<html lang dir>`, head, header, main, footer)
+- [x]  Add semantic base templates and empty-state components
+- [x]  Add mobile bottom-navigation shell
+- [x]  Add server-side pagination component for listings
+- [x]  Add favicon and static asset serving
 
 ## Phase 2: Identity and Sessions
 
