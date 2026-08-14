@@ -9,6 +9,31 @@
   </form>
   {{end}}
 
+  {{if .PaymentsEnabled}}
+  <h2>Payouts</h2>
+  {{if .StripePayoutsReady}}
+  <p>Stripe payouts are enabled for your account.</p>
+  {{else if .StripeChargesReady}}
+  <p class="help">Stripe onboarding is in progress; payouts are not enabled yet.</p>
+  <form method="post" action="/sell/onboarding/stripe/start" novalidate>
+    {{template "csrffield" .CSRF}}
+    <button class="btn" type="submit">Continue Stripe onboarding</button>
+  </form>
+  {{else if .StripeConnected}}
+  <p class="help">Stripe onboarding is incomplete.</p>
+  <form method="post" action="/sell/onboarding/stripe/start" novalidate>
+    {{template "csrffield" .CSRF}}
+    <button class="btn" type="submit">Continue Stripe onboarding</button>
+  </form>
+  {{else}}
+  <p class="help">Connect a Stripe account to receive payouts for paid orders.</p>
+  <form method="post" action="/sell/onboarding/stripe/start" novalidate>
+    {{template "csrffield" .CSRF}}
+    <button class="btn btn-primary" type="submit">Connect with Stripe</button>
+  </form>
+  {{end}}
+  {{end}}
+
   <p>
     <a class="btn" href="/sell/profile">Edit public profile</a>
     <a class="btn" href="/sell/portfolio">Manage portfolio</a>

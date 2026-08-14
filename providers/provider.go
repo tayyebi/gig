@@ -48,6 +48,7 @@ const (
 // platform's own vocabulary.
 type NormalizedPayment struct {
 	ProviderRef   string
+	ChargeRef     string // the provider's refundable reference (e.g. Stripe's PaymentIntent ID, distinct from the Checkout Session ID)
 	Status        string
 	AmountMinor   int64
 	Currency      string
@@ -70,14 +71,24 @@ type RefundResult struct {
 	Status      string // one of the Status* constants
 }
 
+// ConnectAccountStatus is a seller's Stripe Connect account capability
+// state, from either an account.updated webhook or a direct status check.
+type ConnectAccountStatus struct {
+	AccountID      string
+	ChargesEnabled bool
+	PayoutsEnabled bool
+}
+
 // VerifiedEvent is a provider webhook event that has passed signature
-// verification, with its normalized event kind and the affected payment.
+// verification, with its normalized event kind and the affected payment or
+// (for Stripe Connect) seller account.
 type VerifiedEvent struct {
 	Provider    string
 	EventID     string
 	EventType   string
 	ProviderRef string
 	Payment     *NormalizedPayment
+	Account     *ConnectAccountStatus
 	RawPayload  []byte
 }
 

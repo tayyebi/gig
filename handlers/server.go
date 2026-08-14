@@ -94,6 +94,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /admin", s.requireRole(store.RoleAdmin, s.adminHome))
 	mux.HandleFunc("GET /admin/payments", s.requireRole(store.RoleAdmin, s.adminPayments))
 	mux.HandleFunc("GET /admin/orders/{id}/payments", s.requireRole(store.RoleAdmin, s.adminOrderPayments))
+	mux.HandleFunc("POST /admin/orders/{id}/refund", s.requireRole(store.RoleAdmin, s.adminOrderRefund))
 
 	// Public catalog.
 	mux.HandleFunc("GET /browse", s.browseCategories)
@@ -142,6 +143,9 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /sell", s.requireSeller(s.sellDashboard))
 	mux.HandleFunc("GET /sell/orders", s.requireSeller(s.ordersListSeller))
 	mux.HandleFunc("POST /sell/onboarding/submit", s.requireSeller(s.sellOnboardingSubmit))
+	mux.HandleFunc("POST /sell/onboarding/stripe/start", s.requireSeller(s.sellOnboardingStripeStart))
+	mux.HandleFunc("GET /sell/onboarding/stripe/refresh", s.requireSeller(s.sellOnboardingStripeRefresh))
+	mux.HandleFunc("GET /sell/onboarding/stripe/return", s.requireSeller(s.sellOnboardingStripeReturn))
 	mux.HandleFunc("GET /sell/profile", s.requireSeller(s.sellProfileForm))
 	mux.HandleFunc("POST /sell/profile", s.requireSeller(s.sellProfileUpdate))
 	mux.HandleFunc("GET /sell/portfolio", s.requireSeller(s.sellPortfolioForm))

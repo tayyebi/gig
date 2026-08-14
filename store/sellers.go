@@ -80,14 +80,19 @@ func (s *Store) UpsertSellerProfile(ctx context.Context, userID int64, displayNa
 	return nil
 }
 
-// SellerOnboarding tracks a seller's readiness to receive payouts. There is
-// no live payment provider yet; this is the data model Phase 5 will drive.
+// SellerOnboarding tracks a seller's readiness to receive payouts.
+// StripeAccountID/ChargesEnabled/PayoutsEnabled reflect the seller's Stripe
+// Connect account; KYCState is a separate, manually reviewed flag that
+// predates the Connect integration and is not driven by it.
 type SellerOnboarding struct {
-	UserID     int64
-	KYCState   string
-	ReviewedAt *time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	UserID          int64
+	KYCState        string
+	StripeAccountID string
+	ChargesEnabled  bool
+	PayoutsEnabled  bool
+	ReviewedAt      *time.Time
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
 }
 
 // EnsureSellerOnboarding creates a not_started onboarding row if one does not
@@ -107,10 +112,10 @@ func (s *Store) GetSellerOnboarding(ctx context.Context, userID int64) (*SellerO
 	var o SellerOnboarding
 	var reviewed sql.NullTime
 	err := s.db.QueryRowContext(ctx, `
-		SELECT user_id, kyc_state, reviewed_at, created_at, updated_at
+		SELECT user_id, kyc_state, stripe_account_id, charges_enabled, payouts_enabled, reviewed_at, created_at, updated_at
 		FROM seller_onboarding WHERE user_id = $1`,
 		userID,
-	).Scan(&o.UserID, &o.KYCState, &reviewed, &o.CreatedAt, &o.UpdatedAt)
+	).Scan(&o.UserID, &o.KYCState, &o.StripeAccountID, &o.ChargesEnabled, &o.PayoutsEnabled, &reviewed, &o.CreatedAt, &o.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotFound
 	}
@@ -122,6 +127,54 @@ func (s *Store) GetSellerOnboarding(ctx context.Context, userID int64) (*SellerO
 		o.ReviewedAt = &t
 	}
 	return &o, nil
+}
+
+// GetSellerOnboardingByStripeAccount resolves the seller a Stripe Connect
+// account webhook refers to.
+func (s *Store) GetSellerOnboardingByStripeAccount(ctx context.Context, accountID string) (*SellerOnboarding, error) {
+	var o SellerOnboarding
+	var reviewed sql.NullTime
+	err := s.db.QueryRowContext(ctx, `
+		SELECT user_id, kyc_state, stripe_account_id, charges_enabled, payouts_enabled, reviewed_at, created_at, updated_at
+		FROM seller_onboarding WHERE stripe_account_id = $1`,
+		accountID,
+	).Scan(&o.UserID, &o.KYCState, &o.StripeAccountID, &o.ChargesEnabled, &o.PayoutsEnabled, &reviewed, &o.CreatedAt, &o.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get seller onboarding for stripe account %s: %w", accountID, err)
+	}
+	if reviewed.Valid {
+		t := reviewed.Time
+		o.ReviewedAt = &t
+	}
+	return &o, nil
+}
+
+// SetStripeAccount records the Stripe Connect account a seller has started
+// or completed onboarding with.
+func (s *Store) SetStripeAccount(ctx context.Context, userID int64, accountID string) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE seller_onboarding SET stripe_account_id = $2, updated_at = now() WHERE user_id = $1`,
+		userID, accountID)
+	if err != nil {
+		return fmt.Errorf("set stripe account for user %d: %w", userID, err)
+	}
+	return nil
+}
+
+// SetStripeAccountCapabilities updates a seller's Connect account status,
+// driven by an account.updated webhook or a direct status check.
+func (s *Store) SetStripeAccountCapabilities(ctx context.Context, accountID string, chargesEnabled, payoutsEnabled bool) error {
+	_, err := s.db.ExecContext(ctx, `
+		UPDATE seller_onboarding SET charges_enabled = $2, payouts_enabled = $3, updated_at = now()
+		WHERE stripe_account_id = $1`,
+		accountID, chargesEnabled, payoutsEnabled)
+	if err != nil {
+		return fmt.Errorf("set stripe account capabilities for account %s: %w", accountID, err)
+	}
+	return nil
 }
 
 // SetOnboardingState transitions a seller's KYC state.

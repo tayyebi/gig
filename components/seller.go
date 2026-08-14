@@ -4,11 +4,15 @@ import "html/template"
 
 // SellerDashboardData backs a seller's own management console.
 type SellerDashboardData struct {
-	CSRF             string
-	OnboardingState  string
-	CanRequestReview bool
-	Gigs             []SellerGigRow
-	RecentOrders     []OrderRow
+	CSRF               string
+	OnboardingState    string
+	CanRequestReview   bool
+	PaymentsEnabled    bool
+	StripeConnected    bool
+	StripeChargesReady bool
+	StripePayoutsReady bool
+	Gigs               []SellerGigRow
+	RecentOrders       []OrderRow
 }
 
 // SellerGigRow is one row in a seller's gig list.

@@ -133,6 +133,7 @@ func (sp *Stripe) Payment(ctx context.Context, providerRef string) (NormalizedPa
 	}
 	return NormalizedPayment{
 		ProviderRef: out.ID,
+		ChargeRef:   out.PaymentIntent,
 		Status:      normalizeCheckoutSessionStatus(out.Status, out.PaymentStatus),
 		AmountMinor: out.AmountTotal,
 		Currency:    out.Currency,
@@ -186,6 +187,62 @@ func (sp *Stripe) Refund(ctx context.Context, in RefundInput) (RefundResult, err
 	return RefundResult{ProviderRef: out.ID, Status: status}, nil
 }
 
+type stripeAccount struct {
+	ID             string `json:"id"`
+	ChargesEnabled bool   `json:"charges_enabled"`
+	PayoutsEnabled bool   `json:"payouts_enabled"`
+}
+
+// CreateConnectAccount creates a Stripe Express account for a seller who has
+// not started onboarding yet. Express is the lightest-weight Connect
+// account type; PLAN.md section 9 leaves the final Express-vs-Custom
+// decision to Phase 0, but Express requires the least platform-side
+// compliance work, so it is the default here.
+func (sp *Stripe) CreateConnectAccount(ctx context.Context, email string) (string, error) {
+	form := url.Values{}
+	form.Set("type", "express")
+	if email != "" {
+		form.Set("email", email)
+	}
+	form.Set("capabilities[card_payments][requested]", "true")
+	form.Set("capabilities[transfers][requested]", "true")
+	var out stripeAccount
+	if err := sp.do(ctx, http.MethodPost, "/accounts", form, "", &out); err != nil {
+		return "", err
+	}
+	return out.ID, nil
+}
+
+// CreateOnboardingLink generates a fresh, single-use hosted onboarding URL
+// for a Connect account. Links expire quickly, so callers should generate
+// one immediately before redirecting the seller rather than caching it.
+func (sp *Stripe) CreateOnboardingLink(ctx context.Context, accountID, returnURL, refreshURL string) (string, error) {
+	form := url.Values{}
+	form.Set("account", accountID)
+	form.Set("type", "account_onboarding")
+	form.Set("return_url", returnURL)
+	form.Set("refresh_url", refreshURL)
+	var out struct {
+		URL string `json:"url"`
+	}
+	if err := sp.do(ctx, http.MethodPost, "/account_links", form, "", &out); err != nil {
+		return "", err
+	}
+	return out.URL, nil
+}
+
+// ConnectAccountStatus fetches a Connect account's current capability state
+// directly, for the seller's return-from-onboarding page (a best-effort
+// status hint; the authoritative update still comes from the
+// account.updated webhook).
+func (sp *Stripe) ConnectAccountStatus(ctx context.Context, accountID string) (ConnectAccountStatus, error) {
+	var out stripeAccount
+	if err := sp.do(ctx, http.MethodGet, "/accounts/"+url.PathEscape(accountID), nil, "", &out); err != nil {
+		return ConnectAccountStatus{}, err
+	}
+	return ConnectAccountStatus{AccountID: out.ID, ChargesEnabled: out.ChargesEnabled, PayoutsEnabled: out.PayoutsEnabled}, nil
+}
+
 // stripeWebhookTolerance rejects webhook deliveries whose timestamp is
 // further from now than this, guarding against replay of a captured
 // request (Stripe's own recommended default).
@@ -232,12 +289,15 @@ func (sp *Stripe) ParseEvent(ctx context.Context, body []byte) (VerifiedEvent, e
 	}
 
 	var obj struct {
-		ID            string `json:"id"`
-		Status        string `json:"status"`
-		PaymentStatus string `json:"payment_status"`
-		AmountTotal   int64  `json:"amount_total"`
-		Amount        int64  `json:"amount"`
-		Currency      string `json:"currency"`
+		ID             string `json:"id"`
+		Status         string `json:"status"`
+		PaymentStatus  string `json:"payment_status"`
+		PaymentIntent  string `json:"payment_intent"`
+		AmountTotal    int64  `json:"amount_total"`
+		Amount         int64  `json:"amount"`
+		Currency       string `json:"currency"`
+		ChargesEnabled bool   `json:"charges_enabled"`
+		PayoutsEnabled bool   `json:"payouts_enabled"`
 	}
 	_ = json.Unmarshal(evt.Data.Object, &obj)
 
@@ -246,10 +306,13 @@ func (sp *Stripe) ParseEvent(ctx context.Context, body []byte) (VerifiedEvent, e
 	case "checkout.session.completed", "checkout.session.expired", "checkout.session.async_payment_failed", "checkout.session.async_payment_succeeded":
 		out.Payment = &NormalizedPayment{
 			ProviderRef: obj.ID,
+			ChargeRef:   obj.PaymentIntent,
 			Status:      normalizeCheckoutSessionStatus(sessionStatusForEventType(evt.Type, obj.Status), obj.PaymentStatus),
 			AmountMinor: obj.AmountTotal,
 			Currency:    obj.Currency,
 		}
+	case "account.updated":
+		out.Account = &ConnectAccountStatus{AccountID: obj.ID, ChargesEnabled: obj.ChargesEnabled, PayoutsEnabled: obj.PayoutsEnabled}
 	}
 	return out, nil
 }

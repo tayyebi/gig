@@ -108,11 +108,15 @@ func (s *Server) sellDashboard(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	body, err := components.SellerDashboardPage(components.SellerDashboardData{
-		CSRF:             sess.CSRF,
-		OnboardingState:  onboardingLabel(onboarding.KYCState),
-		CanRequestReview: onboarding.KYCState == store.KYCNotStarted || onboarding.KYCState == store.KYCRejected,
-		Gigs:             rows,
-		RecentOrders:     toOrderRows(recentOrders),
+		CSRF:               sess.CSRF,
+		OnboardingState:    onboardingLabel(onboarding.KYCState),
+		CanRequestReview:   onboarding.KYCState == store.KYCNotStarted || onboarding.KYCState == store.KYCRejected,
+		PaymentsEnabled:    s.Cfg.PaymentsEnabled,
+		StripeConnected:    onboarding.StripeAccountID != "",
+		StripeChargesReady: onboarding.ChargesEnabled,
+		StripePayoutsReady: onboarding.PayoutsEnabled,
+		Gigs:               rows,
+		RecentOrders:       toOrderRows(recentOrders),
 	})
 	if err != nil {
 		s.renderError(w, err)

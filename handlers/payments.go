@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/tayyebi/gig/components"
+	"github.com/tayyebi/gig/ledger"
 	"github.com/tayyebi/gig/providers"
 	"github.com/tayyebi/gig/services"
 	"github.com/tayyebi/gig/store"
@@ -115,6 +116,82 @@ func (s *Server) paymentCancelReturn(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/orders/%d", id), http.StatusSeeOther)
 }
 
+// stripeProvider narrows s.Provider to the Stripe adapter for Connect
+// onboarding, which is Stripe-specific and not part of the generic Provider
+// interface used for payment collection.
+func (s *Server) stripeProvider() (*providers.Stripe, bool) {
+	sp, ok := s.Provider.(*providers.Stripe)
+	return sp, ok
+}
+
+// sellOnboardingStripeStart creates (if needed) a Stripe Express account for
+// the signed-in seller and redirects them to Stripe-hosted onboarding.
+func (s *Server) sellOnboardingStripeStart(w http.ResponseWriter, r *http.Request) {
+	u := s.userFrom(r)
+	sp, ok := s.stripeProvider()
+	if !ok {
+		s.flashError(r, "Payouts are not enabled yet.")
+		http.Redirect(w, r, "/sell", http.StatusSeeOther)
+		return
+	}
+	onboarding, err := s.Store.GetSellerOnboarding(r.Context(), u.ID)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	accountID := onboarding.StripeAccountID
+	if accountID == "" {
+		accountID, err = sp.CreateConnectAccount(r.Context(), u.Email)
+		if err != nil {
+			s.Log.Error("create stripe connect account", "error", err, "user_id", u.ID)
+			s.flashError(r, "We could not start Stripe onboarding. Please try again.")
+			http.Redirect(w, r, "/sell", http.StatusSeeOther)
+			return
+		}
+		if err := s.Store.SetStripeAccount(r.Context(), u.ID, accountID); err != nil {
+			s.renderError(w, err)
+			return
+		}
+		s.audit(r.Context(), &u.ID, r, "seller.stripe_account_created", "user", strconv.FormatInt(u.ID, 10), map[string]any{"stripe_account_id": accountID})
+	}
+
+	link, err := sp.CreateOnboardingLink(r.Context(), accountID,
+		s.Cfg.BaseURL+"/sell/onboarding/stripe/return", s.Cfg.BaseURL+"/sell/onboarding/stripe/refresh")
+	if err != nil {
+		s.Log.Error("create stripe onboarding link", "error", err, "user_id", u.ID)
+		s.flashError(r, "We could not open Stripe onboarding. Please try again.")
+		http.Redirect(w, r, "/sell", http.StatusSeeOther)
+		return
+	}
+	http.Redirect(w, r, link, http.StatusSeeOther)
+}
+
+// sellOnboardingStripeRefresh is Stripe's refresh_url: the onboarding link
+// expired or was invalid, so a fresh one is generated the same way a first
+// visit would.
+func (s *Server) sellOnboardingStripeRefresh(w http.ResponseWriter, r *http.Request) {
+	s.sellOnboardingStripeStart(w, r)
+}
+
+// sellOnboardingStripeReturn is Stripe's return_url after the hosted
+// onboarding flow. The seller's capability state is never trusted from this
+// request alone — it is authoritatively updated by the account.updated
+// webhook — but a best-effort direct status check here lets the dashboard
+// reflect completed onboarding immediately instead of waiting on webhook
+// delivery.
+func (s *Server) sellOnboardingStripeReturn(w http.ResponseWriter, r *http.Request) {
+	u := s.userFrom(r)
+	if sp, ok := s.stripeProvider(); ok {
+		if onboarding, err := s.Store.GetSellerOnboarding(r.Context(), u.ID); err == nil && onboarding.StripeAccountID != "" {
+			if status, err := sp.ConnectAccountStatus(r.Context(), onboarding.StripeAccountID); err == nil {
+				_ = s.Store.SetStripeAccountCapabilities(r.Context(), status.AccountID, status.ChargesEnabled, status.PayoutsEnabled)
+			}
+		}
+	}
+	s.flashNotice(r, "Thanks! We're confirming your Stripe account status.")
+	http.Redirect(w, r, "/sell", http.StatusSeeOther)
+}
+
 // StripeWebhook receives and verifies Stripe webhook deliveries. It does the
 // minimum synchronous work — verify the signature, dedupe-insert the raw
 // event — then acks immediately and enqueues the actual processing as a job,
@@ -168,6 +245,12 @@ func (s *Server) adminPayments(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, err)
 		return
 	}
+	deadJobs, err := s.Store.ListJobsByKindAndStatus(r.Context(), paymentWebhookJobKind, store.JobStatusDead, 50)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+
 	var sb strings.Builder
 	sb.WriteString("<section class=\"container\"><h1>Platform balances</h1>")
 	if len(balances) == 0 {
@@ -181,6 +264,24 @@ func (s *Server) adminPayments(w http.ResponseWriter, r *http.Request) {
 		}
 		sb.WriteString("</tbody></table>")
 	}
+
+	sb.WriteString("<h2>Reconciliation exceptions</h2>")
+	if len(deadJobs) == 0 {
+		sb.WriteString("<p>No dead-lettered webhook jobs.</p>")
+	} else {
+		sb.WriteString("<p>These webhook events exhausted their retries and were never applied; they need manual review.</p>")
+		sb.WriteString("<table><thead><tr><th scope=\"col\">Job ID</th><th scope=\"col\">Attempts</th><th scope=\"col\">Last error</th><th scope=\"col\">Updated</th></tr></thead><tbody>")
+		for _, j := range deadJobs {
+			lastError := ""
+			if j.LastError != nil {
+				lastError = *j.LastError
+			}
+			sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td>%d/%d</td><td>%s</td><td>%s</td></tr>",
+				j.ID, j.Attempts, j.MaxAttempts, html.EscapeString(lastError), html.EscapeString(j.UpdatedAt.Format("2006-01-02 15:04"))))
+		}
+		sb.WriteString("</tbody></table>")
+	}
+
 	sb.WriteString("<p><a href=\"/admin\">Back to admin</a></p></section>")
 	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - payments", sb.String()))
 }
@@ -202,13 +303,116 @@ func (s *Server) adminOrderPayments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	currency := strings.ToUpper(intent.Currency)
-	body := fmt.Sprintf(`<section class="container"><h1>Order #%d payments</h1>
+	var sb strings.Builder
+	sb.WriteString(fmt.Sprintf(`<section class="container"><h1>Order #%d payments</h1>
 <dl>
 <dt>Provider</dt><dd>%s</dd>
 <dt>Provider reference</dt><dd>%s</dd>
 <dt>Status</dt><dd>%s</dd>
 <dt>Amount</dt><dd>%s</dd>
-</dl></section>`, orderID, html.EscapeString(intent.Provider), html.EscapeString(intent.ProviderRef),
-		html.EscapeString(intent.Status), html.EscapeString(formatMoney(intent.AmountMinor, currency)))
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - order payments", body))
+</dl>`, orderID, html.EscapeString(intent.Provider), html.EscapeString(intent.ProviderRef),
+		html.EscapeString(intent.Status), html.EscapeString(formatMoney(intent.AmountMinor, currency))))
+	if intent.Status == services.PaymentSucceeded && intent.ChargeRef != "" {
+		sb.WriteString(fmt.Sprintf(`<h2>Refund</h2>
+<p class="help">Issues a full refund of %s through %s. There is no partial-refund support yet.</p>
+<form method="post" action="/admin/orders/%d/refund" novalidate>
+%s
+<label for="reason">Reason</label>
+<input id="reason" name="reason" type="text" required maxlength="500">
+<button class="btn" type="submit">Refund order</button>
+</form>`, html.EscapeString(formatMoney(intent.AmountMinor, currency)), html.EscapeString(intent.Provider), orderID, csrfInputHTML(s.csrfFor(r))))
+	}
+	sb.WriteString(`</section>`)
+	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - order payments", sb.String()))
+}
+
+func csrfInputHTML(token string) string {
+	return fmt.Sprintf(`<input type="hidden" name="_csrf" value="%s">`, html.EscapeString(token))
+}
+
+// adminOrderRefund issues a full refund for an order's succeeded payment
+// through the provider, then posts the corresponding ledger entries. Only a
+// full refund of the original captured amount is supported; there is no
+// partial-refund UI yet.
+func (s *Server) adminOrderRefund(w http.ResponseWriter, r *http.Request) {
+	admin := s.userFrom(r)
+	orderID, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.renderError(w, err)
+		return
+	}
+	reason := strings.TrimSpace(r.FormValue("reason"))
+	if reason == "" {
+		s.flashError(r, "A refund reason is required.")
+		http.Redirect(w, r, fmt.Sprintf("/admin/orders/%d/payments", orderID), http.StatusSeeOther)
+		return
+	}
+
+	order, err := s.Store.GetOrder(r.Context(), orderID)
+	if err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			s.notFound(w, r)
+			return
+		}
+		s.renderError(w, err)
+		return
+	}
+	intent, err := s.Store.LatestPaymentIntentForOrder(r.Context(), orderID)
+	if err != nil || intent.Status != services.PaymentSucceeded || intent.ChargeRef == "" {
+		s.flashError(r, "This order has no refundable payment.")
+		http.Redirect(w, r, fmt.Sprintf("/admin/orders/%d/payments", orderID), http.StatusSeeOther)
+		return
+	}
+	if s.Provider == nil {
+		s.flashError(r, "Payments are not enabled.")
+		http.Redirect(w, r, fmt.Sprintf("/admin/orders/%d/payments", orderID), http.StatusSeeOther)
+		return
+	}
+
+	amount := order.TotalMinorUnits
+	result, err := s.Provider.Refund(r.Context(), providers.RefundInput{
+		ProviderRef:    intent.ChargeRef,
+		AmountMinor:    amount,
+		Currency:       intent.Currency,
+		Reason:         reason,
+		IdempotencyKey: services.IdempotencyKey(fmt.Sprintf("refund:%d", orderID), orderID, 0),
+	})
+	if err != nil {
+		s.Log.Error("issue refund", "error", err, "order_id", orderID)
+		s.flashError(r, "The refund could not be issued. Please try again.")
+		http.Redirect(w, r, fmt.Sprintf("/admin/orders/%d/payments", orderID), http.StatusSeeOther)
+		return
+	}
+
+	refundID, err := s.Store.CreateRefund(r.Context(), orderID, intent.ID, &admin.ID, reason, amount, intent.Currency)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	if err := s.Store.SetRefundStatus(r.Context(), refundID, result.Status, result.ProviderRef); err != nil {
+		s.renderError(w, err)
+		return
+	}
+
+	if result.Status == services.PaymentSucceeded {
+		feeRefund := order.PlatformFeeMinorUnits
+		payableRefund := amount - feeRefund
+		sellerFundsAvailable := order.AcceptedAt != nil
+		entries, err := ledger.RefundIssued(order.ID, order.SellerID, amount, feeRefund, payableRefund, sellerFundsAvailable, strings.ToLower(intent.Currency))
+		if err != nil {
+			s.Log.Error("build refund ledger entries", "error", err, "order_id", orderID)
+		} else if _, err := s.Store.PostLedgerEntries(r.Context(), entries); err != nil {
+			s.Log.Error("post refund ledger entries", "error", err, "order_id", orderID)
+		}
+		s.notify(r.Context(), order.BuyerID, "payment.refunded", fmt.Sprintf("Order #%d was refunded", order.ID), fmt.Sprintf("/orders/%d", order.ID))
+	}
+
+	s.audit(r.Context(), &admin.ID, r, "payment.refund_issued", "order", strconv.FormatInt(orderID, 10),
+		map[string]any{"amount_minor_units": amount, "status": result.Status, "provider_ref": result.ProviderRef})
+	s.flashNotice(r, "Refund issued.")
+	http.Redirect(w, r, fmt.Sprintf("/admin/orders/%d/payments", orderID), http.StatusSeeOther)
 }

@@ -189,12 +189,12 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 
 ### Stripe Connect adapter
 
-- [ ] Implement Stripe seller onboarding link/redirect flow (deferred — requires a Phase 0 decision on Express vs Custom accounts)
-- [ ] Handle Stripe account status webhooks (deferred with onboarding, above)
+- [x] Implement Stripe seller onboarding link/redirect flow — Express accounts by default (least platform-side compliance work); PLAN.md's Express-vs-Custom call is still open for Phase 0 to formally confirm
+- [x] Handle Stripe account status webhooks — `account.updated` updates `seller_onboarding.charges_enabled`/`payouts_enabled`
 - [x] Implement Stripe Checkout Session creation with `success_url`/`cancel_url`
-- [x] Implement payment success and failure webhooks (`checkout.session.completed`/`expired`/`async_payment_*`); refund, dispute, and payout webhook types are not parsed yet
-- [x] Implement idempotency keys on checkout creation (deterministic per order+attempt); refund idempotency key is plumbed through `providers.RefundInput` but unused until a refund handler exists
-- [ ] Implement refund flow with provider reference — `store.CreateRefund`/`ledger.RefundIssued`/`Provider.Refund` all exist but nothing calls them yet; no admin or buyer-facing refund action
+- [x] Implement payment success and failure webhooks (`checkout.session.completed`/`expired`/`async_payment_*`); dispute and payout webhook types are still not parsed
+- [x] Implement idempotency keys on checkout and refund creation
+- [x] Implement refund flow with provider reference — admin-only, full-refund-only action at `/admin/orders/{id}/refund`; no buyer-facing refund request yet
 - [x] Implement `PaymentIntent` transitions from normalized webhook state
 - [x] Keep secret keys out of client output and logs
 
@@ -202,18 +202,18 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 
 - [x] Implement `LedgerAccount` and `LedgerEntry` double-entry postings
 - [x] Implement posting for gross buyer funds, platform fee, seller payable
-- [ ] Implement posting for refunds and adjustments — `ledger.RefundIssued` is implemented and unit-tested but not wired into any refund flow (see above)
+- [x] Implement posting for refunds and adjustments — `ledger.RefundIssued`, wired into the admin refund action
 - [x] Implement balances: pending earnings, available earnings, platform revenue, refunds, reserves, clearing accounts
 - [x] Add ledger balance validation test
 - [x] Implement reconciliation job against Stripe records — `payment.reconcile_sweep` re-checks stale intents directly against the provider
-- [ ] Make reconciliation exceptions visible in admin console
-- [ ] Implement audited, permissioned manual adjustments with reason
+- [x] Make reconciliation exceptions visible in admin console — dead-lettered `payment.webhook_process` jobs are listed on `/admin/payments`
+- [ ] Implement audited, permissioned manual adjustments with reason — refunds are audited; there is no separate free-form ledger adjustment tool
 
 ### Admin payment tooling
 
 - [ ] Build admin search by payment ID and provider reference — only a fixed per-order lookup (`/admin/orders/{id}/payments`) exists, not a search form
 - [ ] Build order and payment timeline view — shows the latest intent only, not the full attempt/webhook history
-- [ ] Implement safe webhook retry tool
+- [ ] Implement safe webhook retry tool — dead-lettered jobs are now visible on `/admin/payments`, but there is no retry button yet
 - [ ] Build payout queue and failed-payout views (payouts are out of scope until Phase 7)
 
 ## Phase 6: Bitcoin and Lightning (BTCPay)

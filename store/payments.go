@@ -15,6 +15,7 @@ type PaymentIntent struct {
 	OrderID         int64
 	Provider        string
 	ProviderRef     string
+	ChargeRef       string
 	Method          string
 	Status          string
 	AmountMinor     int64
@@ -29,12 +30,12 @@ type PaymentIntent struct {
 	UpdatedAt       time.Time
 }
 
-const paymentIntentColumns = `id, order_id, provider, provider_ref, method, status, amount_minor_units, currency,
+const paymentIntentColumns = `id, order_id, provider, provider_ref, charge_ref, method, status, amount_minor_units, currency,
 	idempotency_key, checkout_url, expires_at, succeeded_at, failed_at, canceled_at, created_at, updated_at`
 
 func scanPaymentIntent(row rowScanner) (*PaymentIntent, error) {
 	var p PaymentIntent
-	if err := row.Scan(&p.ID, &p.OrderID, &p.Provider, &p.ProviderRef, &p.Method, &p.Status, &p.AmountMinor, &p.Currency,
+	if err := row.Scan(&p.ID, &p.OrderID, &p.Provider, &p.ProviderRef, &p.ChargeRef, &p.Method, &p.Status, &p.AmountMinor, &p.Currency,
 		&p.IdempotencyKey, &p.CheckoutURL, &p.ExpiresAt, &p.SucceededAt, &p.FailedAt, &p.CanceledAt, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
@@ -156,6 +157,18 @@ func (s *Store) SetPaymentIntentSession(ctx context.Context, id int64, providerR
 	}
 	if n, _ := res.RowsAffected(); n == 0 {
 		return ErrNotFound
+	}
+	return nil
+}
+
+// SetPaymentIntentChargeRef records the provider's refundable charge
+// reference (e.g. Stripe's PaymentIntent ID), learned only once the
+// checkout session completes — distinct from ProviderRef, which is the
+// session ID used to create/look up the intent.
+func (s *Store) SetPaymentIntentChargeRef(ctx context.Context, id int64, chargeRef string) error {
+	_, err := s.db.ExecContext(ctx, `UPDATE payment_intents SET charge_ref = $2, updated_at = now() WHERE id = $1`, id, chargeRef)
+	if err != nil {
+		return fmt.Errorf("set payment intent charge ref %d: %w", id, err)
 	}
 	return nil
 }

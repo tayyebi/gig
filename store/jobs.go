@@ -103,6 +103,46 @@ func (s *Store) ClaimJob(ctx context.Context, workerID string, staleAfter time.D
 	return &j, nil
 }
 
+// ListJobsByKindAndStatus returns the most recent jobs of a given kind and
+// status (e.g. kind="payment.webhook_process", status=JobStatusDead), for
+// admin visibility into reconciliation exceptions.
+func (s *Store) ListJobsByKindAndStatus(ctx context.Context, kind, status string, limit int) ([]Job, error) {
+	if limit < 1 || limit > 200 {
+		limit = 50
+	}
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, kind, payload, status, attempts, max_attempts, run_at, locked_by, locked_at, last_error, created_at, updated_at
+		FROM jobs WHERE kind = $1 AND status = $2 ORDER BY updated_at DESC LIMIT $3`, kind, status, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list jobs by kind and status: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Job
+	for rows.Next() {
+		var j Job
+		var lockedBy sql.NullString
+		var lockedAt sql.NullTime
+		var lastError sql.NullString
+		if err := rows.Scan(&j.ID, &j.Kind, &j.Payload, &j.Status, &j.Attempts, &j.MaxAttempts, &j.RunAt,
+			&lockedBy, &lockedAt, &lastError, &j.CreatedAt, &j.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan job: %w", err)
+		}
+		if lockedBy.Valid {
+			j.LockedBy = lockedBy.String
+		}
+		if lockedAt.Valid {
+			t := lockedAt.Time
+			j.LockedAt = &t
+		}
+		if lastError.Valid {
+			j.LastError = &lastError.String
+		}
+		out = append(out, j)
+	}
+	return out, rows.Err()
+}
+
 // CompleteJob marks a claimed job as done.
 func (s *Store) CompleteJob(ctx context.Context, id int64) error {
 	res, err := s.db.ExecContext(ctx,

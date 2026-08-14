@@ -68,8 +68,14 @@ func processPaymentWebhook(ctx context.Context, jc *jobContext, job store.Job) e
 	if err != nil {
 		return fmt.Errorf("parse webhook payload: %w", err)
 	}
+	if evt.Account != nil {
+		if err := jc.Store.SetStripeAccountCapabilities(ctx, evt.Account.AccountID, evt.Account.ChargesEnabled, evt.Account.PayoutsEnabled); err != nil {
+			return fmt.Errorf("update seller connect account: %w", err)
+		}
+		return jc.Store.MarkWebhookProcessed(ctx, event.ID)
+	}
 	if evt.Payment == nil {
-		// An event type we don't act on (e.g. an account update). Ack it.
+		// An event type we don't act on. Ack it.
 		return jc.Store.MarkWebhookProcessed(ctx, event.ID)
 	}
 
@@ -84,6 +90,12 @@ func processPaymentWebhook(ctx context.Context, jc *jobContext, job store.Job) e
 
 	if err := jc.Store.RecordPaymentAttempt(ctx, intent.ID, evt.Payment.Status, evt.Payment.FailureCode, evt.Payment.FailureReason, ""); err != nil {
 		return fmt.Errorf("record payment attempt: %w", err)
+	}
+	if evt.Payment.ChargeRef != "" && evt.Payment.ChargeRef != intent.ChargeRef {
+		if err := jc.Store.SetPaymentIntentChargeRef(ctx, intent.ID, evt.Payment.ChargeRef); err != nil {
+			return fmt.Errorf("set payment intent charge ref: %w", err)
+		}
+		intent.ChargeRef = evt.Payment.ChargeRef
 	}
 
 	if services.CanTransitionPayment(intent.Status, evt.Payment.Status) {
@@ -179,6 +191,13 @@ func paymentReconcileSweep(ctx context.Context, jc *jobContext, _ store.Job) err
 			if err != nil {
 				jc.Log.Warn("reconcile: fetch provider payment failed", "intent_id", intent.ID, "error", err)
 				continue
+			}
+			if payment.ChargeRef != "" && payment.ChargeRef != intent.ChargeRef {
+				if err := jc.Store.SetPaymentIntentChargeRef(ctx, intent.ID, payment.ChargeRef); err != nil {
+					jc.Log.Warn("reconcile: set charge ref failed", "intent_id", intent.ID, "error", err)
+				} else {
+					intent.ChargeRef = payment.ChargeRef
+				}
 			}
 			if !services.CanTransitionPayment(intent.Status, payment.Status) {
 				continue
