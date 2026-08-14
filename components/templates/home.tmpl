@@ -28,4 +28,11 @@
   <p>Categories are coming soon.</p>
   {{end}}
 </section>
+
+{{if .Featured}}
+<section class="container">
+  <h2>Recently published gigs</h2>
+  {{template "giggrid" .Featured}}
+</section>
+{{end}}
 {{end}}

@@ -1,0 +1,19 @@
+{{define "categories"}}
+<section class="container">
+  <h1>Browse categories</h1>
+  {{if .Categories}}
+  <ul class="card-grid">
+    {{range .Categories}}
+    <li>
+      <a class="card" href="/browse/{{.Slug}}">
+        <h3>{{.Name}}</h3>
+        <p>{{.Blurb}}</p>
+      </a>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="muted">Categories are coming soon.</p>
+  {{end}}
+</section>
+{{end}}

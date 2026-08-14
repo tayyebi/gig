@@ -5,6 +5,7 @@ import "html/template"
 // HomeData supplies the landing page content.
 type HomeData struct {
 	Categories []CategoryCard
+	Featured   []GigCard
 }
 
 // CategoryCard is a browse link for a category.

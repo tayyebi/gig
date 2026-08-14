@@ -28,16 +28,7 @@ type Server struct {
 }
 
 func newServer(cfg *config.Config, log *slog.Logger, st *store.Store) *Server {
-	var mailer services.Mailer = &services.LogMailer{Log: log}
-	if cfg.SMTPHost != "" {
-		mailer = services.NewSMTPMailer(services.SMTPConfig{
-			Host: cfg.SMTPHost,
-			Port: cfg.SMTPPort,
-			User: cfg.SMTPUser,
-			Pass: cfg.SMTPPass,
-			From: cfg.EmailFrom,
-		}, log)
-	}
+	mailer := services.MailerFromConfig(cfg, log)
 	return &Server{
 		cfg:   cfg,
 		log:   log,
@@ -60,6 +51,12 @@ func (s *Server) handler() http.Handler {
 
 	mux := http.NewServeMux()
 	mux.Handle("GET /static/", http.StripPrefix("/static/", http.FileServer(http.FS(staticSub))))
+	// Uploaded portfolio and gig images. These are public by design (they are
+	// shown on public seller and gig pages). Order deliveries and dispute
+	// evidence are private: they live under cfg.PrivateStorageDir, which is
+	// never mounted here, and are only ever streamed back through the
+	// authorization-checked handler at GET /orders/{id}/attachments/{id}.
+	mux.Handle("GET /media/", http.StripPrefix("/media/", http.FileServer(http.Dir(s.cfg.StorageDir))))
 	mux.Handle("/", s.handlers.Chain(s.handlers.Routes()))
 
 	var h http.Handler = mux

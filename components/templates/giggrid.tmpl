@@ -1,0 +1,13 @@
+{{define "giggrid"}}
+<ul class="card-grid">
+  {{range .}}
+  <li>
+    <a class="card" href="/gigs/{{.Slug}}">
+      <h3>{{.Title}}</h3>
+      <p>{{.SellerName}}{{if .CategoryName}} &middot; {{.CategoryName}}{{end}}</p>
+      <p>{{.StartingPrice}} &middot; {{.RatingText}}</p>
+    </a>
+  </li>
+  {{end}}
+</ul>
+{{end}}

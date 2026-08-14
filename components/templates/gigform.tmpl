@@ -1,0 +1,109 @@
+{{define "gigform"}}
+<section class="container">
+  <h1>{{if .Editing}}Edit gig{{else}}Create a gig{{end}}</h1>
+  {{template "errorsummary" .Errors}}
+  <form method="post" action="{{if .Editing}}/sell/gigs/{{.GigID}}{{else}}/sell/gigs{{end}}" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "title"}}">Title</label>
+      <input id="{{fieldid "title"}}" name="title" type="text" value="{{.Title}}" required{{if .Errors.title}} aria-invalid="true" aria-describedby="{{fieldid "title"}}-error"{{end}}>
+      {{if .Errors.title}}<p class="field-error" id="{{fieldid "title"}}-error">{{.Errors.title}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="{{fieldid "description"}}">Description</label>
+      <textarea id="{{fieldid "description"}}" name="description" required{{if .Errors.description}} aria-invalid="true" aria-describedby="{{fieldid "description"}}-error"{{end}}>{{.Description}}</textarea>
+      {{if .Errors.description}}<p class="field-error" id="{{fieldid "description"}}-error">{{.Errors.description}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="{{fieldid "category"}}">Category</label>
+      <select id="{{fieldid "category"}}" name="category_id">
+        <option value="">No category</option>
+        {{range .Categories}}
+        <option value="{{.ID}}"{{if eq (printf "%d" .ID) $.CategoryID}} selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="{{fieldid "tags"}}">Tags</label>
+      <input id="{{fieldid "tags"}}" name="tags" type="text" value="{{.Tags}}" placeholder="logo, branding, illustration">
+      <p class="help">Comma-separated.</p>
+    </div>
+
+    <h2>Packages</h2>
+    <p class="help">Give at least one tier a name and price. Leave a tier's name blank to skip it.</p>
+    {{if .Errors.packages}}<p class="field-error">{{.Errors.packages}}</p>{{end}}
+    {{range $i, $pkg := .Packages}}
+    <fieldset>
+      <legend>{{$pkg.Tier}}</legend>
+      <div class="field">
+        <label for="{{fieldid (printf "pkg_name_%d" $i)}}">Package name</label>
+        <input id="{{fieldid (printf "pkg_name_%d" $i)}}" name="pkg_name_{{$i}}" type="text" value="{{$pkg.Name}}">
+      </div>
+      <div class="field">
+        <label for="{{fieldid (printf "pkg_description_%d" $i)}}">What is included</label>
+        <textarea id="{{fieldid (printf "pkg_description_%d" $i)}}" name="pkg_description_{{$i}}">{{$pkg.Description}}</textarea>
+      </div>
+      <div class="field">
+        <label for="{{fieldid (printf "pkg_price_%d" $i)}}">Price (USD)</label>
+        <input id="{{fieldid (printf "pkg_price_%d" $i)}}" name="pkg_price_{{$i}}" type="text" inputmode="decimal" value="{{$pkg.Price}}">
+      </div>
+      <div class="field">
+        <label for="{{fieldid (printf "pkg_delivery_%d" $i)}}">Delivery time (days)</label>
+        <input id="{{fieldid (printf "pkg_delivery_%d" $i)}}" name="pkg_delivery_{{$i}}" type="number" min="1" value="{{$pkg.DeliveryDays}}">
+      </div>
+      <div class="field">
+        <label for="{{fieldid (printf "pkg_revisions_%d" $i)}}">Revisions included</label>
+        <input id="{{fieldid (printf "pkg_revisions_%d" $i)}}" name="pkg_revisions_{{$i}}" type="number" min="0" value="{{$pkg.Revisions}}">
+      </div>
+    </fieldset>
+    {{end}}
+
+    <h2>Add-ons (optional)</h2>
+    <p class="help">Leave a name blank to skip a slot.</p>
+    {{range $i, $addon := .Addons}}
+    <fieldset>
+      <legend>Add-on</legend>
+      <div class="field">
+        <label for="{{fieldid (printf "addon_name_%d" $i)}}">Name</label>
+        <input id="{{fieldid (printf "addon_name_%d" $i)}}" name="addon_name_{{$i}}" type="text" value="{{$addon.Name}}">
+      </div>
+      <div class="field">
+        <label for="{{fieldid (printf "addon_description_%d" $i)}}">Description</label>
+        <input id="{{fieldid (printf "addon_description_%d" $i)}}" name="addon_description_{{$i}}" type="text" value="{{$addon.Description}}">
+      </div>
+      <div class="field">
+        <label for="{{fieldid (printf "addon_price_%d" $i)}}">Price (USD)</label>
+        <input id="{{fieldid (printf "addon_price_%d" $i)}}" name="addon_price_{{$i}}" type="text" inputmode="decimal" value="{{$addon.Price}}">
+      </div>
+      <div class="field">
+        <label for="{{fieldid (printf "addon_delivery_%d" $i)}}">Extra delivery days</label>
+        <input id="{{fieldid (printf "addon_delivery_%d" $i)}}" name="addon_delivery_{{$i}}" type="number" min="0" value="{{$addon.DeliveryDays}}">
+      </div>
+    </fieldset>
+    {{end}}
+
+    <button class="btn btn-primary" type="submit">{{if .Editing}}Save gig{{else}}Create gig{{end}}</button>
+  </form>
+
+  {{if .Editing}}
+  <h2>Media</h2>
+  <form method="post" action="/sell/gigs/{{.GigID}}/media" enctype="multipart/form-data" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "media"}}">Add an image</label>
+      <input id="{{fieldid "media"}}" name="image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required>
+    </div>
+    <button class="btn" type="submit">Upload</button>
+  </form>
+  {{if .Media}}
+  <ul class="card-grid">
+    {{range .Media}}
+    <li><img src="/media/{{.Path}}" alt="{{.AltText}}" loading="lazy" width="400" height="300"></li>
+    {{end}}
+  </ul>
+  {{end}}
+  {{end}}
+
+  <p class="muted"><a href="/sell">Back to seller dashboard</a></p>
+</section>
+{{end}}

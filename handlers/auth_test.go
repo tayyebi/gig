@@ -92,7 +92,7 @@ func newAuthServer(t *testing.T) *authServer {
 	if err != nil {
 		t.Fatalf("open raw db: %v", err)
 	}
-	if _, err := raw.ExecContext(ctx, `TRUNCATE TABLE jobs, audit_log, auth_tokens, sessions, user_roles, users RESTART IDENTITY`); err != nil {
+	if _, err := raw.ExecContext(ctx, `TRUNCATE TABLE jobs, audit_log, auth_tokens, sessions, user_roles, users RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("truncate: %v", err)
 	}
 	raw.Close()

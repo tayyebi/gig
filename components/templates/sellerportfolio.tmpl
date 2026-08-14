@@ -1,0 +1,39 @@
+{{define "sellerportfolio"}}
+<section class="container">
+  <h1>Portfolio</h1>
+  {{template "errorsummary" .Errors}}
+  <form method="post" action="/sell/portfolio" enctype="multipart/form-data" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "title"}}">Title</label>
+      <input id="{{fieldid "title"}}" name="title" type="text" required{{if .Errors.title}} aria-invalid="true" aria-describedby="{{fieldid "title"}}-error"{{end}}>
+      {{if .Errors.title}}<p class="field-error" id="{{fieldid "title"}}-error">{{.Errors.title}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="{{fieldid "description"}}">Description</label>
+      <textarea id="{{fieldid "description"}}" name="description"></textarea>
+    </div>
+    <div class="field">
+      <label for="{{fieldid "image"}}">Image</label>
+      <input id="{{fieldid "image"}}" name="image" type="file" accept="image/png,image/jpeg,image/webp,image/gif" required{{if .Errors.image}} aria-invalid="true" aria-describedby="{{fieldid "image"}}-error"{{end}}>
+      <p class="help">JPEG, PNG, GIF, or WebP.</p>
+      {{if .Errors.image}}<p class="field-error" id="{{fieldid "image"}}-error">{{.Errors.image}}</p>{{end}}
+    </div>
+    <button class="btn btn-primary" type="submit">Add to portfolio</button>
+  </form>
+
+  {{if .Items}}
+  <ul class="card-grid">
+    {{range .Items}}
+    <li class="card">
+      <img src="/media/{{.MediaPath}}" alt="{{.Title}}" loading="lazy" width="400" height="300">
+      <h3>{{.Title}}</h3>
+    </li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="muted">Add a few samples of your work to build buyer trust.</p>
+  {{end}}
+  <p class="muted"><a href="/sell">Back to seller dashboard</a></p>
+</section>
+{{end}}

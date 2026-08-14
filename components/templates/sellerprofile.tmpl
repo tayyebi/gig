@@ -1,0 +1,27 @@
+{{define "sellerprofile"}}
+<section class="container">
+  <h1>{{.DisplayName}}</h1>
+  <p class="muted">{{.RatingText}}{{if .Location}} &middot; {{.Location}}{{end}}</p>
+  {{if .Bio}}<p>{{.Bio}}</p>{{end}}
+
+  {{if .Portfolio}}
+  <h2>Portfolio</h2>
+  <ul class="card-grid">
+    {{range .Portfolio}}
+    <li class="card">
+      <img src="/media/{{.MediaPath}}" alt="{{.Title}}" loading="lazy" width="400" height="300">
+      <h3>{{.Title}}</h3>
+      {{if .Description}}<p>{{.Description}}</p>{{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{end}}
+
+  <h2>Gigs</h2>
+  {{if .Gigs}}
+  {{template "giggrid" .Gigs}}
+  {{else}}
+  <p class="muted">This seller has not published any gigs yet.</p>
+  {{end}}
+</section>
+{{end}}

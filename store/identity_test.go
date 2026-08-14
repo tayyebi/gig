@@ -15,7 +15,7 @@ func openTestIdentityStore(t *testing.T) *Store {
 	t.Helper()
 	st := openTestStore(t)
 	ctx := context.Background()
-	if _, err := st.db.ExecContext(ctx, `TRUNCATE TABLE jobs, audit_log, auth_tokens, sessions, user_roles, users RESTART IDENTITY`); err != nil {
+	if _, err := st.db.ExecContext(ctx, `TRUNCATE TABLE jobs, audit_log, auth_tokens, sessions, user_roles, users RESTART IDENTITY CASCADE`); err != nil {
 		t.Fatalf("truncate identity tables: %v", err)
 	}
 	if err := st.Migrate(ctx, migrations.FS); err != nil {

@@ -43,6 +43,16 @@ func (s *Server) withSession(next http.Handler) http.Handler {
 
 // withCSRF rejects every state-changing request that lacks a valid CSRF token
 // bound to the session. GET/HEAD/OPTIONS/TRACE are exempt.
+//
+// r.Body is capped here, before anything (including this middleware's own
+// r.FormValue call below) ever touches the request body. FormValue is the
+// first thing in the whole chain to parse a multipart body, and
+// ParseMultipartForm/FormFile short-circuit once r.MultipartForm is non-nil
+// ("if r.MultipartForm != nil { return nil }"), so a handler's own later
+// http.MaxBytesReader + ParseMultipartForm call never actually runs if this
+// one hasn't already limited the read: without it, an upload handler's size
+// cap would be silently inert and a client could stream an unbounded body
+// into memory/temp files before any handler code sees the request.
 func (s *Server) withCSRF(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.Method {
@@ -55,6 +65,7 @@ func (s *Server) withCSRF(next http.Handler) http.Handler {
 			http.Error(w, "forbidden", http.StatusForbidden)
 			return
 		}
+		r.Body = http.MaxBytesReader(w, r.Body, s.Cfg.UploadMaxBytes+uploadFormOverhead)
 		if !services.VerifyCSRF(r.FormValue("_csrf"), sess.CSRF) {
 			s.Log.Warn("csrf check failed", "path", r.URL.Path, "ip", clientIP(r))
 			http.Error(w, "forbidden", http.StatusForbidden)

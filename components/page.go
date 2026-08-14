@@ -12,6 +12,7 @@ type User struct {
 	Email       string
 	Role        string
 	IsAdmin     bool
+	IsSeller    bool
 	UnreadCount int
 }
 

@@ -1,0 +1,59 @@
+{{define "gigdetail"}}
+<article class="container">
+  {{if .CategoryName}}<p class="muted">{{.CategoryName}}</p>{{end}}
+  <h1>{{.Title}}</h1>
+  <p class="muted">By <a href="/sellers/{{.SellerID}}">{{.SellerName}}</a> &middot; {{.RatingText}}</p>
+
+  {{if .Media}}
+  <ul class="card-grid">
+    {{range .Media}}
+    <li><img src="/media/{{.Path}}" alt="{{.AltText}}" loading="lazy" width="400" height="300"></li>
+    {{end}}
+  </ul>
+  {{end}}
+
+  <p>{{.Description}}</p>
+
+  {{if .Tags}}<p class="muted">Tags: {{range $i, $t := .Tags}}{{if $i}}, {{end}}{{$t}}{{end}}</p>{{end}}
+
+  {{if .CanFavorite}}
+  <form method="post" action="/gigs/{{.Slug}}/favorite" novalidate>
+    {{template "csrffield" .CSRF}}
+    <button class="btn" type="submit">{{if .Favorited}}Remove from favorites{{else}}Save to favorites{{end}}</button>
+  </form>
+  {{end}}
+
+  {{if .Packages}}
+  <h2>Packages</h2>
+  <ul class="card-grid">
+    {{range .Packages}}
+    <li class="card">
+      <h3>{{.Name}}</h3>
+      <p class="gig-price">{{.Price}}</p>
+      {{if .Description}}<p>{{.Description}}</p>{{end}}
+      <p class="muted">{{.DeliveryDays}}-day delivery &middot; {{.Revisions}} revision{{if ne .Revisions 1}}s{{end}}</p>
+      {{if $.CanOrder}}
+      <form method="post" action="/gigs/{{$.Slug}}/checkout" novalidate>
+        {{template "csrffield" $.CSRF}}
+        <input type="hidden" name="package_id" value="{{.ID}}">
+        <button class="btn btn-primary" type="submit">Continue ({{.Price}})</button>
+      </form>
+      {{end}}
+    </li>
+    {{end}}
+  </ul>
+  {{if not $.CanOrder}}
+  <p class="help">{{if $.CanFavorite}}You cannot order your own gig.{{else}}<a href="/login?next=/gigs/{{.Slug}}">Sign in</a> to order.{{end}}</p>
+  {{end}}
+  {{end}}
+
+  {{if .Addons}}
+  <h2>Add-ons</h2>
+  <ul>
+    {{range .Addons}}
+    <li>{{.Name}} &mdash; {{.Price}}{{if .Description}}: {{.Description}}{{end}}</li>
+    {{end}}
+  </ul>
+  {{end}}
+</article>
+{{end}}

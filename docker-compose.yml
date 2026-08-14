@@ -31,6 +31,7 @@ services:
       SESSION_SECRET: "dev-only-session-secret-0123456789abcdef"
       CSRF_SECRET: "dev-only-csrf-secret-0123456789abcdef"
       STORAGE_DIR: "/app/data"
+      PRIVATE_STORAGE_DIR: "/app/data-private"
       JOB_CONCURRENCY: "4"
     depends_on:
       db:
@@ -39,6 +40,7 @@ services:
       - "127.0.0.1:8090:8080"
     volumes:
       - appdata:/app/data
+      - appdata-private:/app/data-private
     networks:
       - internal
 
@@ -52,12 +54,14 @@ services:
         condition: service_healthy
     volumes:
       - appdata:/app/data
+      - appdata-private:/app/data-private
     networks:
       - internal
 
 volumes:
   pgdata:
   appdata:
+  appdata-private:
 
 networks:
   # Internal bridge with no default external exposure.

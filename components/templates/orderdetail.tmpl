@@ -1,0 +1,209 @@
+{{define "orderdetail"}}
+<section class="container">
+  <h1>{{.GigTitle}}</h1>
+  <p class="muted">
+    Order #{{.ID}} &middot; {{.StatusLabel}}
+    {{if .IsBuyer}}&middot; Seller: {{.SellerName}}{{end}}
+    {{if or .IsSeller .IsAdmin}}&middot; Buyer: {{.BuyerName}}{{end}}
+  </p>
+  {{if .IsBuyer}}<p><a href="/orders">Back to your orders</a></p>{{end}}
+  {{if .IsSeller}}<p><a href="/sell/orders">Back to your orders</a></p>{{end}}
+
+  {{if .Timeline}}
+  <h2>Status</h2>
+  <ul>
+    {{range .Timeline}}
+    <li>{{.Label}}: {{.At}}</li>
+    {{end}}
+  </ul>
+  {{end}}
+
+  <h2>Order summary</h2>
+  <table>
+    <thead><tr><th scope="col">Item</th><th scope="col">Price</th></tr></thead>
+    <tbody>
+    {{range .Items}}
+      <tr><td>{{.Name}}</td><td>{{.Price}}</td></tr>
+    {{end}}
+      <tr><td>Subtotal</td><td>{{.Subtotal}}</td></tr>
+      <tr><td>Platform fee</td><td>{{.PlatformFee}}</td></tr>
+      <tr><th scope="row">Total</th><td>{{.Total}}</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Requirements</h2>
+  <p>{{.Requirements}}</p>
+  <p class="muted">Revisions used: {{.RevisionsUsed}} of {{.RevisionsAllowed}}</p>
+
+  <h2>Deliveries</h2>
+  {{if .Deliveries}}
+  {{range .Deliveries}}
+  <article class="card">
+    <h3>Delivery v{{.Version}} &middot; {{.CreatedAt}}</h3>
+    <p>{{.Message}}</p>
+  </article>
+  {{end}}
+  {{if .DeliveryAttachment}}
+  <h3>Delivery files</h3>
+  <ul>
+    {{range .DeliveryAttachment}}
+    <li><a href="/orders/{{$.ID}}/attachments/{{.ID}}">{{.FileName}}</a></li>
+    {{end}}
+  </ul>
+  {{end}}
+  {{else}}
+  <p class="muted">No deliveries yet.</p>
+  {{end}}
+
+  {{if .CanDeliver}}
+  <h3>Submit a delivery</h3>
+  <form method="post" action="/orders/{{.ID}}/deliver" enctype="multipart/form-data" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "delivery_message"}}">Message to the buyer</label>
+      <textarea id="{{fieldid "delivery_message"}}" name="delivery_message" required></textarea>
+    </div>
+    <div class="field">
+      <label for="{{fieldid "delivery_file"}}">File (optional)</label>
+      <input id="{{fieldid "delivery_file"}}" name="delivery_file" type="file">
+    </div>
+    <button class="btn btn-primary" type="submit">Submit delivery</button>
+  </form>
+  {{end}}
+
+  {{if .CanRevise}}
+  <h3>Request a revision</h3>
+  <form method="post" action="/orders/{{.ID}}/revise" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "revise_reason"}}">What needs to change?</label>
+      <textarea id="{{fieldid "revise_reason"}}" name="revise_reason" required></textarea>
+    </div>
+    <button class="btn" type="submit">Request revision</button>
+  </form>
+  {{end}}
+
+  {{if .CanAccept}}
+  <form method="post" action="/orders/{{.ID}}/accept" novalidate>
+    {{template "csrffield" .CSRF}}
+    <button class="btn btn-primary" type="submit">Accept delivery</button>
+  </form>
+  {{end}}
+
+  {{if .Review}}
+  <h2>Your review</h2>
+  <p>Rating: {{.Review.Rating}}/5</p>
+  <p>{{.Review.Body}}</p>
+  {{else if .CanReview}}
+  <h2>Leave a review</h2>
+  <form method="post" action="/orders/{{.ID}}/review" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "review_rating"}}">Rating</label>
+      <select id="{{fieldid "review_rating"}}" name="review_rating">
+        <option value="5">5 &mdash; Excellent</option>
+        <option value="4">4 &mdash; Good</option>
+        <option value="3">3 &mdash; Average</option>
+        <option value="2">2 &mdash; Poor</option>
+        <option value="1">1 &mdash; Very poor</option>
+      </select>
+    </div>
+    <div class="field">
+      <label for="{{fieldid "review_body"}}">Comments</label>
+      <textarea id="{{fieldid "review_body"}}" name="review_body"></textarea>
+    </div>
+    <button class="btn btn-primary" type="submit">Submit review</button>
+  </form>
+  {{end}}
+
+  <h2>Messages</h2>
+  {{if .Messages}}
+  <ul>
+    {{range .Messages}}
+    <li><strong>{{if .Mine}}You{{else}}{{.SenderName}}{{end}}</strong> ({{.CreatedAt}}): {{.Body}}</li>
+    {{end}}
+  </ul>
+  {{else}}
+  <p class="muted">No messages yet.</p>
+  {{end}}
+  {{if .CanMessage}}
+  <form method="post" action="/orders/{{.ID}}/messages" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "message_body"}}">Send a message</label>
+      <textarea id="{{fieldid "message_body"}}" name="message_body" required></textarea>
+    </div>
+    <button class="btn" type="submit">Send</button>
+  </form>
+  {{end}}
+
+  <h2>Cancellation</h2>
+  {{if .Cancellation}}
+  <p>{{if .Cancellation.RequestedByMe}}You requested{{else}}The other party requested{{end}} cancellation: &ldquo;{{.Cancellation.Reason}}&rdquo; ({{.Cancellation.Status}})</p>
+  {{if .CanCancelResolve}}
+  <form method="post" action="/orders/{{.ID}}/cancel/resolve" novalidate class="inline-form">
+    {{template "csrffield" .CSRF}}
+    <button class="btn btn-primary" type="submit" name="decision" value="approve">Approve cancellation</button>
+    <button class="btn btn-danger" type="submit" name="decision" value="decline">Decline</button>
+  </form>
+  {{end}}
+  {{else if .CanCancelRequest}}
+  <form method="post" action="/orders/{{.ID}}/cancel/request" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "cancel_reason"}}">Reason for cancellation</label>
+      <textarea id="{{fieldid "cancel_reason"}}" name="cancel_reason" required></textarea>
+    </div>
+    <button class="btn" type="submit">Request cancellation</button>
+  </form>
+  {{else}}
+  <p class="muted">No cancellation requested.</p>
+  {{end}}
+
+  <h2>Dispute</h2>
+  {{if .Dispute}}
+  <p>{{if .Dispute.OpenedByMe}}You opened{{else}}The other party opened{{end}} a dispute: &ldquo;{{.Dispute.Reason}}&rdquo; ({{.Dispute.Status}})</p>
+  {{if .Dispute.Decision}}<p>Decision: {{.Dispute.Decision}}</p>{{end}}
+  {{if .DisputeAttachment}}
+  <ul>
+    {{range .DisputeAttachment}}
+    <li><a href="/orders/{{$.ID}}/attachments/{{.ID}}">{{.FileName}}</a></li>
+    {{end}}
+  </ul>
+  {{end}}
+  {{else}}
+  <p class="muted">No dispute on this order.</p>
+  {{end}}
+  {{if .CanResolveDispute}}
+  <form method="post" action="/orders/{{.ID}}/dispute/resolve" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "dispute_decision"}}">Decision notes</label>
+      <textarea id="{{fieldid "dispute_decision"}}" name="dispute_decision" required></textarea>
+    </div>
+    <div class="field">
+      <label for="{{fieldid "dispute_outcome"}}">Order outcome</label>
+      <select id="{{fieldid "dispute_outcome"}}" name="dispute_outcome">
+        <option value="in_progress">Resume order (in progress)</option>
+        <option value="cancelled">Cancel order</option>
+        <option value="closed">Close order</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" type="submit">Resolve dispute</button>
+  </form>
+  {{else if .CanDispute}}
+  <form method="post" action="/orders/{{.ID}}/dispute" enctype="multipart/form-data" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "dispute_reason"}}">Describe the issue</label>
+      <textarea id="{{fieldid "dispute_reason"}}" name="dispute_reason" required></textarea>
+    </div>
+    <div class="field">
+      <label for="{{fieldid "dispute_evidence"}}">Evidence (optional)</label>
+      <input id="{{fieldid "dispute_evidence"}}" name="dispute_evidence" type="file">
+    </div>
+    <button class="btn btn-danger" type="submit">Open dispute</button>
+  </form>
+  {{end}}
+</section>
+{{end}}

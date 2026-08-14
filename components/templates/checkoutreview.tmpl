@@ -1,0 +1,33 @@
+{{define "checkoutreview"}}
+<section class="container">
+  <h1>Checkout &mdash; review and confirm</h1>
+  <p class="muted">{{.GigTitle}}</p>
+
+  <h2>Requirements</h2>
+  <p>{{.Requirements}}</p>
+
+  <h2>Order summary</h2>
+  <table>
+    <thead>
+      <tr><th scope="col">Item</th><th scope="col">Price</th></tr>
+    </thead>
+    <tbody>
+    {{range .Items}}
+      <tr><td>{{.Name}}</td><td>{{.Price}}</td></tr>
+    {{end}}
+      <tr><td>Subtotal</td><td>{{.Subtotal}}</td></tr>
+      <tr><td>Platform fee</td><td>{{.PlatformFee}}</td></tr>
+      <tr><th scope="row">Total</th><td>{{.Total}}</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Payment</h2>
+  <p class="help">Card, Bitcoin/Lightning, and stablecoin checkout are not connected yet. Confirming creates your order with payment pending; you will be notified here once a payment method is available for it.</p>
+
+  <form method="post" action="/checkout/{{.DraftID}}/confirm" novalidate>
+    {{template "csrffield" .CSRF}}
+    <button class="btn btn-primary" type="submit">Confirm order</button>
+  </form>
+  <p><a href="/checkout/{{.DraftID}}/requirements">Back to requirements</a></p>
+</section>
+{{end}}

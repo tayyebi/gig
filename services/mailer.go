@@ -6,7 +6,25 @@ import (
 	"log/slog"
 	"net/smtp"
 	"strings"
+
+	"github.com/tayyebi/gig/config"
 )
+
+// MailerFromConfig returns an SMTP-backed mailer when SMTP_HOST is
+// configured, or a LogMailer otherwise. The web server and the worker both
+// call this so they always agree on how mail is delivered.
+func MailerFromConfig(cfg *config.Config, log *slog.Logger) Mailer {
+	if cfg.SMTPHost == "" {
+		return &LogMailer{Log: log}
+	}
+	return NewSMTPMailer(SMTPConfig{
+		Host: cfg.SMTPHost,
+		Port: cfg.SMTPPort,
+		User: cfg.SMTPUser,
+		Pass: cfg.SMTPPass,
+		From: cfg.EmailFrom,
+	}, log)
+}
 
 // Email is a plain-text message ready for delivery.
 type Email struct {

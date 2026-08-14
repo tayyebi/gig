@@ -77,7 +77,7 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 - [x] Implement argon2id password hashing and verification
 - [x] Implement email verification flow with token expiry
 - [x] Implement password reset flow
-- [ ] Implement TOTP MFA enrollment and verification
+- [x] Implement TOTP MFA enrollment and verification
 - [x] Implement constant-time comparison utilities
 
 ### Sessions and CSRF
@@ -91,88 +91,91 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 ### Authorization
 
 - [x] Implement roles and permissions model (`UserRole`)
-- [ ] Implement authorization middleware for buyer, seller, and admin routes
+- [x] Implement authorization middleware for buyer, seller, and admin routes
 - [x] Implement rate limiting for auth, messaging, checkout, uploads, wallet changes
 
 ### Headers and audit
 
 - [x] Send security headers: CSP `script-src 'none'`, `Referrer-Policy`, `X-Content-Type-Options`, `X-Frame-Options`, `Permissions-Policy`
 - [x] Implement `AuditLog` recording of privileged actions
-- [ ] Build basic account settings pages (profile, email, password, MFA)
+- [x] Build basic account settings pages (profile, email, password, MFA)
 
 ## Phase 3: Marketplace Core
 
 ### Profiles and portfolio
 
-- [ ] Implement `SellerProfile` CRUD and public seller page
-- [ ] Implement seller onboarding state (KYC state, requirements, timestamps)
-- [ ] Implement portfolio upload via multipart forms
-- [ ] Implement media validation (type, size, content) and scanning
-- [ ] Implement signed URLs for private attachments
+- [x] Implement `SellerProfile` CRUD and public seller page
+- [x] Implement seller onboarding state (KYC state, timestamps); `requirements` schema exists but is unpopulated until a real provider lands in Phase 5
+- [x] Implement portfolio upload via multipart forms
+- [x] Implement media validation (content-type sniffing, size cap)
+- [ ] Implement malware/content scanning for uploads
+- [ ] Implement signed URLs for private attachments (portfolio/gig media are public by design; this applies to order deliveries and dispute evidence, which arrive with orders in Phase 4)
 
 ### Catalog
 
-- [ ] Implement `Category` and `Tag` management
-- [ ] Implement `Gig` CRUD with slug generation and moderation state
-- [ ] Implement `GigPackage` (price, delivery time, revisions, scope)
-- [ ] Implement `GigAddon` (price, delivery impact, availability)
-- [ ] Implement `GigMedia` and moderation state
-- [ ] Implement `Favorite` toggle
+- [x] Seed starter categories and free-text seller-supplied tags
+- [ ] Implement admin `Category` and `Tag` management console (Phase 8)
+- [x] Implement `Gig` CRUD with slug generation and moderation state
+- [x] Implement `GigPackage` (price, delivery time, revisions, scope)
+- [x] Implement `GigAddon` (price, delivery impact, availability)
+- [x] Implement `GigMedia` and moderation state
+- [x] Implement `Favorite` toggle
 
 ### Browse and search
 
-- [ ] Implement category browse page
-- [ ] Implement search with filters, sorting, and pagination
-- [ ] Implement featured gigs section
-- [ ] Build public gig detail page with packages and add-ons
-- [ ] Build seller earnings summary and public rating display
+- [x] Implement category browse page
+- [x] Implement search with filters, sorting, and pagination
+- [x] Implement featured gigs section
+- [x] Build public gig detail page with packages and add-ons
+- [x] Build public rating display (shows "No reviews yet" until Phase 4 reviews exist)
+- [ ] Build seller earnings summary (depends on Phase 5 payments/ledger)
 
 ### Dashboards
 
-- [ ] Build buyer dashboard (orders, favorites, messages preview)
-- [ ] Build seller dashboard (gigs, earnings, orders, payout status)
-- [ ] Add empty states and actionable errors to all dashboards
+- [x] Build buyer dashboard (favorites; orders and messages are explicit placeholders until Phase 4)
+- [x] Build seller dashboard (gigs; earnings, orders, and payout status are explicit placeholders until Phase 5)
+- [x] Add empty states and actionable errors to all dashboards
 
 ## Phase 4: Orders and Messaging
 
 ### Pricing and checkout
 
-- [ ] Implement authoritative total calculation (subtotal, fee, seller amount, taxes, total)
-- [ ] Implement `DraftOrder` with server-persisted multi-step progress
-- [ ] Build checkout steps: requirements, payment method, review, confirm
-- [ ] Implement PRG on every checkout step with validation error re-render
-- [ ] Create order in `pending_payment` on confirm
-- [ ] Implement immutable `OrderItem` snapshots
+- [x] Implement authoritative total calculation (subtotal, fee, total); seller-amount ledger split and jurisdictional taxes wait on Phase 5 ledger and the Phase 0 tax/jurisdiction decision
+- [x] Implement `DraftOrder` with server-persisted multi-step progress
+- [x] Build checkout steps: requirements, review/confirm; the "payment method" step is folded into review since no provider is connected yet (Phase 5) — it shows a placeholder notice instead of a method picker
+- [x] Implement PRG on every checkout step with validation error re-render
+- [x] Create order in `pending_payment` on confirm
+- [x] Implement immutable `OrderItem` snapshots
 
 ### State machine
 
-- [ ] Implement order state machine with all allowed transitions
-- [ ] Enforce transitions server-side only; never trust client state
-- [ ] Implement order requirements and completion status
-- [ ] Implement `OrderAttachment` uploads and signed serving
+- [x] Implement order state machine with all allowed transitions
+- [x] Enforce transitions server-side only; never trust client state
+- [x] Implement order requirements and completion status
+- [x] Implement `OrderAttachment` uploads and signed serving (private storage root outside the public `/media/` mount, served only after a buyer/seller/admin check)
 
 ### Fulfillment
 
-- [ ] Implement delivery submission with versioning
-- [ ] Implement revision request flow with limit enforcement
-- [ ] Implement buyer acceptance flow
-- [ ] Implement auto-accept job with configured period
-- [ ] Implement cancellation request flow
-- [ ] Implement `Review` creation with moderation state
+- [x] Implement delivery submission with versioning
+- [x] Implement revision request flow with limit enforcement
+- [x] Implement buyer acceptance flow
+- [x] Implement auto-accept job with configured period
+- [x] Implement cancellation request flow
+- [x] Implement `Review` creation with moderation state
 
 ### Messaging and notifications
 
-- [ ] Implement order-bound `OrderMessage` threading
-- [ ] Implement seller requests for buyer information
-- [ ] Implement `Notification` creation and unread count
-- [ ] Implement notification list pages for buyers and sellers
-- [ ] Implement transactional email dispatch via job queue
+- [x] Implement order-bound `OrderMessage` threading
+- [ ] Implement seller requests for buyer information (no dedicated "request info" UI; a seller can ask through the regular order-message thread today)
+- [x] Implement `Notification` creation and unread count
+- [x] Implement notification list pages for buyers and sellers
+- [x] Implement transactional email dispatch via job queue
 
 ### Disputes
 
-- [ ] Implement `Dispute` creation with reason and evidence uploads
-- [ ] Implement dispute timeline and status
-- [ ] Implement dispute resolution decision recording (before real payouts)
+- [x] Implement `Dispute` creation with reason and evidence uploads
+- [x] Implement dispute timeline and status
+- [x] Implement dispute resolution decision recording (before real payouts) — admin-only action, no dedicated admin console yet (Phase 8), reachable from the order page itself
 
 ## Phase 5: Fiat Payments and Seller Onboarding
 

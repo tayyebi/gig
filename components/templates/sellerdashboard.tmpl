@@ -1,0 +1,80 @@
+{{define "sellerdashboard"}}
+<section class="container">
+  <h1>Seller dashboard</h1>
+  <p class="muted">Onboarding status: {{.OnboardingState}}</p>
+  {{if .CanRequestReview}}
+  <form method="post" action="/sell/onboarding/submit" novalidate>
+    {{template "csrffield" .CSRF}}
+    <button class="btn" type="submit">Submit for review</button>
+  </form>
+  {{end}}
+
+  <p>
+    <a class="btn" href="/sell/profile">Edit public profile</a>
+    <a class="btn" href="/sell/portfolio">Manage portfolio</a>
+  </p>
+
+  <h2>Your gigs</h2>
+  <p><a class="btn btn-primary" href="/sell/gigs/new">Create a gig</a></p>
+  {{if .Gigs}}
+  <table>
+    <thead>
+      <tr><th scope="col">Title</th><th scope="col">Status</th><th scope="col">Actions</th></tr>
+    </thead>
+    <tbody>
+    {{range .Gigs}}
+      <tr>
+        <td><a href="/sell/gigs/{{.ID}}/edit">{{.Title}}</a></td>
+        <td>{{.Status}}</td>
+        <td>
+          {{if eq .Status "draft"}}
+          <form method="post" action="/sell/gigs/{{.ID}}/status" novalidate class="inline-form">
+            {{template "csrffield" $.CSRF}}
+            <input type="hidden" name="status" value="active">
+            <button class="link-button" type="submit">Publish</button>
+          </form>
+          {{else if eq .Status "active"}}
+          <form method="post" action="/sell/gigs/{{.ID}}/status" novalidate class="inline-form">
+            {{template "csrffield" $.CSRF}}
+            <input type="hidden" name="status" value="paused">
+            <button class="link-button" type="submit">Pause</button>
+          </form>
+          {{else if eq .Status "paused"}}
+          <form method="post" action="/sell/gigs/{{.ID}}/status" novalidate class="inline-form">
+            {{template "csrffield" $.CSRF}}
+            <input type="hidden" name="status" value="active">
+            <button class="link-button" type="submit">Resume</button>
+          </form>
+          {{end}}
+          {{if ne .Status "archived"}}
+          <form method="post" action="/sell/gigs/{{.ID}}/status" novalidate class="inline-form">
+            {{template "csrffield" $.CSRF}}
+            <input type="hidden" name="status" value="archived">
+            <button class="link-button" type="submit">Archive</button>
+          </form>
+          {{end}}
+        </td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">You have not created any gigs yet.</p>
+  {{end}}
+
+  <h2>Orders</h2>
+  {{if .RecentOrders}}
+  <ul>
+    {{range .RecentOrders}}
+    <li><a href="/orders/{{.ID}}">{{.GigTitle}}</a> &middot; {{.CounterpartyName}} &middot; {{.StatusLabel}} &middot; {{.Total}}</li>
+    {{end}}
+  </ul>
+  <p><a href="/sell/orders">View all orders</a></p>
+  {{else}}
+  <p class="muted">Orders placed against your gigs will appear here.</p>
+  {{end}}
+
+  <h2>Earnings</h2>
+  <p class="muted">Earnings and payouts will appear here once payments are implemented.</p>
+</section>
+{{end}}

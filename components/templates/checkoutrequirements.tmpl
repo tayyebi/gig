@@ -1,0 +1,31 @@
+{{define "checkoutrequirements"}}
+<section class="container">
+  <h1>Checkout &mdash; requirements</h1>
+  <p class="muted">{{.GigTitle}} &middot; {{.PackageName}} package &middot; {{.PackagePrice}}</p>
+  {{template "errorsummary" .Errors}}
+  <form method="post" action="/checkout/{{.DraftID}}/requirements" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "requirements"}}">What does the seller need from you to get started?</label>
+      <textarea id="{{fieldid "requirements"}}" name="requirements" required{{if .Errors.requirements}} aria-invalid="true" aria-describedby="{{fieldid "requirements"}}-error"{{end}}>{{.Requirements}}</textarea>
+      {{if .Errors.requirements}}<p class="field-error" id="{{fieldid "requirements"}}-error">{{.Errors.requirements}}</p>{{end}}
+    </div>
+
+    {{if .Addons}}
+    <fieldset>
+      <legend>Add-ons</legend>
+      {{range .Addons}}
+      <div class="field">
+        <label>
+          <input type="checkbox" name="addon_id" value="{{.ID}}"{{if .Selected}} checked{{end}}>
+          {{.Name}} &mdash; {{.Price}}{{if .Description}}: {{.Description}}{{end}}
+        </label>
+      </div>
+      {{end}}
+    </fieldset>
+    {{end}}
+
+    <button class="btn btn-primary" type="submit">Continue to review</button>
+  </form>
+</section>
+{{end}}

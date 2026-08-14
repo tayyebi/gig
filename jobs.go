@@ -10,14 +10,16 @@ import (
 	"time"
 
 	"github.com/tayyebi/gig/config"
+	"github.com/tayyebi/gig/services"
 	"github.com/tayyebi/gig/store"
 )
 
 // jobContext bundles dependencies available to every job handler.
 type jobContext struct {
-	Store *store.Store
-	Log   *slog.Logger
-	Cfg   *config.Config
+	Store  *store.Store
+	Log    *slog.Logger
+	Cfg    *config.Config
+	Mailer services.Mailer
 }
 
 // jobHandler processes a single claimed job. Returning an error records the
@@ -31,17 +33,19 @@ type jobQueue struct {
 	cfg      *config.Config
 	log      *slog.Logger
 	st       *store.Store
+	mailer   services.Mailer
 	workerID string
 	handlers map[string]jobHandler
 	slots    chan struct{}
 	wg       sync.WaitGroup
 }
 
-func newJobQueue(cfg *config.Config, log *slog.Logger, st *store.Store) *jobQueue {
+func newJobQueue(cfg *config.Config, log *slog.Logger, st *store.Store, mailer services.Mailer) *jobQueue {
 	return &jobQueue{
 		cfg:      cfg,
 		log:      log,
 		st:       st,
+		mailer:   mailer,
 		workerID: fmt.Sprintf("%s-%d", cfg.Hostname(), os.Getpid()),
 		handlers: make(map[string]jobHandler),
 		slots:    make(chan struct{}, cfg.JobConcurrency),
@@ -55,7 +59,7 @@ func (q *jobQueue) Register(kind string, h jobHandler) {
 
 // Run polls the queue until ctx is cancelled, then drains in-flight jobs.
 func (q *jobQueue) Run(ctx context.Context) error {
-	jc := &jobContext{Store: q.st, Log: q.log, Cfg: q.cfg}
+	jc := &jobContext{Store: q.st, Log: q.log, Cfg: q.cfg, Mailer: q.mailer}
 	q.log.Info("job queue started", "worker", q.workerID, "concurrency", q.cfg.JobConcurrency)
 
 	ticker := time.NewTicker(q.cfg.JobPollInterval)

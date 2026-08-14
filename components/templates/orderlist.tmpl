@@ -1,0 +1,32 @@
+{{define "orderlist"}}
+<section class="container">
+  <h1>{{.Heading}}</h1>
+  {{if .Orders}}
+  <table>
+    <thead>
+      <tr>
+        <th scope="col">Gig</th>
+        <th scope="col">{{if .AsSeller}}Buyer{{else}}Seller{{end}}</th>
+        <th scope="col">Status</th>
+        <th scope="col">Total</th>
+        <th scope="col">Placed</th>
+      </tr>
+    </thead>
+    <tbody>
+    {{range .Orders}}
+      <tr>
+        <td><a href="/orders/{{.ID}}">{{.GigTitle}}</a></td>
+        <td>{{.CounterpartyName}}</td>
+        <td>{{.StatusLabel}}</td>
+        <td>{{.Total}}</td>
+        <td>{{.CreatedAt}}</td>
+      </tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{.Pagination}}
+  {{else}}
+  <p class="muted">No orders yet.</p>
+  {{end}}
+</section>
+{{end}}

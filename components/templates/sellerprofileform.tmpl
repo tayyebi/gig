@@ -1,0 +1,24 @@
+{{define "sellerprofileform"}}
+<section class="auth">
+  <h1>Seller profile</h1>
+  {{template "errorsummary" .Errors}}
+  <form method="post" action="/sell/profile" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "display_name"}}">Display name</label>
+      <input id="{{fieldid "display_name"}}" name="display_name" type="text" value="{{.DisplayName}}" required{{if .Errors.display_name}} aria-invalid="true" aria-describedby="{{fieldid "display_name"}}-error"{{end}}>
+      {{if .Errors.display_name}}<p class="field-error" id="{{fieldid "display_name"}}-error">{{.Errors.display_name}}</p>{{end}}
+    </div>
+    <div class="field">
+      <label for="{{fieldid "bio"}}">Bio</label>
+      <textarea id="{{fieldid "bio"}}" name="bio">{{.Bio}}</textarea>
+    </div>
+    <div class="field">
+      <label for="{{fieldid "location"}}">Location</label>
+      <input id="{{fieldid "location"}}" name="location" type="text" autocomplete="address-level2" value="{{.Location}}">
+    </div>
+    <button class="btn btn-primary" type="submit">Save profile</button>
+  </form>
+  <p class="muted"><a href="/sell">Back to seller dashboard</a></p>
+</section>
+{{end}}

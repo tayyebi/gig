@@ -1,0 +1,27 @@
+{{define "buyerdashboard"}}
+<section class="container">
+  <h1>Your dashboard</h1>
+
+  <h2>Orders</h2>
+  {{if .RecentOrders}}
+  <ul>
+    {{range .RecentOrders}}
+    <li><a href="/orders/{{.ID}}">{{.GigTitle}}</a> &middot; {{.StatusLabel}} &middot; {{.Total}}</li>
+    {{end}}
+  </ul>
+  <p><a href="/orders">View all orders</a></p>
+  {{else}}
+  <p class="muted">Orders you place will appear here. <a href="/search">Browse gigs</a>.</p>
+  {{end}}
+
+  <h2>Notifications</h2>
+  <p><a href="/notifications">View your notifications</a>, including new messages on your orders.</p>
+
+  <h2>Favorites</h2>
+  {{if .Favorites}}
+  {{template "giggrid" .Favorites}}
+  {{else}}
+  <p class="muted">Gigs you favorite will show up here. <a href="/search">Browse gigs</a>.</p>
+  {{end}}
+</section>
+{{end}}

@@ -395,6 +395,11 @@ input[type="file"] {
   color: var(--color-primary);
 }
 
+.bn-item-soon {
+  opacity: 0.45;
+  cursor: default;
+}
+
 body {
   padding-block-end: calc(var(--bottomnav-height) + env(safe-area-inset-bottom));
 }

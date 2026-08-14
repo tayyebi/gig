@@ -5,6 +5,15 @@
     {{if .User}}
     <nav class="header-actions" aria-label="Account">
       {{if .User.IsAdmin}}<a href="/admin">Admin</a>{{end}}
+      {{if .User.IsSeller}}
+      <a href="/sell">Selling</a>
+      {{else}}
+      <form method="post" action="/sell/start" class="inline-form">
+        <input type="hidden" name="_csrf" value="{{.CSRF}}">
+        <button type="submit" class="link-button">Start selling</button>
+      </form>
+      {{end}}
+      <a href="/dashboard">Dashboard</a>
       <a href="/account">Account</a>
       <form method="post" action="/logout" class="inline-form">
         <input type="hidden" name="_csrf" value="{{.CSRF}}">

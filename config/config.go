@@ -58,8 +58,13 @@ type Config struct {
 	SMTPPass  string
 
 	// Storage
-	StorageDir     string
-	UploadMaxBytes int64
+	StorageDir        string
+	PrivateStorageDir string
+	UploadMaxBytes    int64
+
+	// Orders
+	PlatformFeeBps  int
+	AutoAcceptAfter time.Duration
 
 	// Jobs
 	JobPollInterval   time.Duration
@@ -154,7 +159,21 @@ func Load() (*Config, error) {
 	if c.StorageDir = env("STORAGE_DIR", "./data"); c.StorageDir == "" {
 		return nil, errRequired("STORAGE_DIR")
 	}
+	// Order deliveries and dispute evidence are private: they live outside
+	// the directory the static file server publishes at /media/, and are
+	// only ever streamed back through the order-attachment handler after an
+	// authorization check.
+	if c.PrivateStorageDir = env("PRIVATE_STORAGE_DIR", "./data-private"); c.PrivateStorageDir == "" {
+		return nil, errRequired("PRIVATE_STORAGE_DIR")
+	}
 	if c.UploadMaxBytes, err = envInt64("UPLOAD_MAX_BYTES", 50<<20); err != nil {
+		return nil, err
+	}
+
+	if c.PlatformFeeBps, err = envInt("PLATFORM_FEE_BPS", 1000); err != nil {
+		return nil, err
+	}
+	if c.AutoAcceptAfter, err = envDuration("AUTO_ACCEPT_AFTER", 72*time.Hour); err != nil {
 		return nil, err
 	}
 
@@ -206,6 +225,9 @@ func (c *Config) validate() error {
 	}
 	if c.UploadMaxBytes < 1 {
 		return fmt.Errorf("UPLOAD_MAX_BYTES must be >= 1")
+	}
+	if c.PlatformFeeBps < 0 || c.PlatformFeeBps > 10000 {
+		return fmt.Errorf("PLATFORM_FEE_BPS must be between 0 and 10000")
 	}
 	if c.AuthRateLimit < 1 {
 		return fmt.Errorf("AUTH_RATE_LIMIT must be >= 1")

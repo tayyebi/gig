@@ -1,0 +1,18 @@
+{{define "notifications"}}
+<section class="container">
+  <h1>Notifications</h1>
+  {{if .Notifications}}
+  <ul>
+    {{range .Notifications}}
+    <li{{if not .Read}} class="unread"{{end}}>
+      {{if .Link}}<a href="{{.Link}}">{{.Body}}</a>{{else}}{{.Body}}{{end}}
+      <span class="muted">&middot; {{.CreatedAt}}</span>
+    </li>
+    {{end}}
+  </ul>
+  {{.Pagination}}
+  {{else}}
+  <p class="muted">You have no notifications yet.</p>
+  {{end}}
+</section>
+{{end}}

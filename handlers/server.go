@@ -24,11 +24,13 @@ type Options struct {
 
 // Server holds shared dependencies for all handlers.
 type Server struct {
-	Store   *store.Store
-	Log     *slog.Logger
-	Cfg     *config.Config
-	Mailer  services.Mailer
-	limiter *services.RateLimiter
+	Store          *store.Store
+	Log            *slog.Logger
+	Cfg            *config.Config
+	Mailer         services.Mailer
+	Storage        *services.Storage
+	PrivateStorage *services.Storage
+	limiter        *services.RateLimiter
 }
 
 // New builds a handlers.Server.
@@ -41,11 +43,13 @@ func New(opts Options) *Server {
 		opts.Mailer = &services.LogMailer{Log: log}
 	}
 	return &Server{
-		Store:   opts.Store,
-		Log:     log,
-		Cfg:     opts.Cfg,
-		Mailer:  opts.Mailer,
-		limiter: services.NewRateLimiter(opts.Cfg.AuthRateLimit, opts.Cfg.AuthRateWindow),
+		Store:          opts.Store,
+		Log:            log,
+		Cfg:            opts.Cfg,
+		Mailer:         opts.Mailer,
+		Storage:        services.NewStorage(opts.Cfg.StorageDir, opts.Cfg.UploadMaxBytes),
+		PrivateStorage: services.NewStorage(opts.Cfg.PrivateStorageDir, opts.Cfg.UploadMaxBytes),
+		limiter:        services.NewRateLimiter(opts.Cfg.AuthRateLimit, opts.Cfg.AuthRateWindow),
 	}
 }
 
@@ -58,6 +62,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /healthz", s.healthz)
 	mux.HandleFunc("GET /readyz", s.readyz)
 	mux.HandleFunc("GET /{$}", s.home)
+	mux.HandleFunc("GET /search", s.search)
 	mux.HandleFunc("/", s.notFound)
 
 	// Auth.
@@ -80,6 +85,61 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /account/mfa", s.requireAuth(s.mfaForm))
 	mux.HandleFunc("POST /account/mfa", s.requireAuth(s.mfaEnable))
 	mux.HandleFunc("POST /account/mfa/disable", s.requireAuth(s.mfaDisable))
+
+	// Admin (role-gated).
+	mux.HandleFunc("GET /admin", s.requireRole(store.RoleAdmin, s.adminHome))
+
+	// Public catalog.
+	mux.HandleFunc("GET /browse", s.browseCategories)
+	mux.HandleFunc("GET /browse/{slug}", s.browseCategory)
+	mux.HandleFunc("GET /gigs/{slug}", s.gigDetail)
+	mux.HandleFunc("POST /gigs/{slug}/favorite", s.requireAuth(s.favoriteToggle))
+	mux.HandleFunc("GET /sellers/{id}", s.sellerProfile)
+
+	// Buyer dashboard (authenticated).
+	mux.HandleFunc("GET /dashboard", s.requireAuth(s.buyerDashboard))
+
+	// Checkout (authenticated buyer).
+	mux.HandleFunc("POST /gigs/{slug}/checkout", s.requireAuth(s.checkoutStart))
+	mux.HandleFunc("GET /checkout/{id}/requirements", s.requireAuth(s.checkoutRequirementsForm))
+	mux.HandleFunc("POST /checkout/{id}/requirements", s.requireAuth(s.checkoutRequirementsSubmit))
+	mux.HandleFunc("GET /checkout/{id}/review", s.requireAuth(s.checkoutReview))
+	mux.HandleFunc("POST /checkout/{id}/confirm", s.requireAuth(s.checkoutConfirm))
+
+	// Orders: workspace shared by buyer, seller, and admin, gated per action
+	// inside each handler rather than at the route (a single order page must
+	// serve all three roles).
+	mux.HandleFunc("GET /orders", s.requireAuth(s.ordersListBuyer))
+	mux.HandleFunc("GET /orders/{id}", s.requireAuth(s.orderDetail))
+	mux.HandleFunc("GET /orders/{id}/attachments/{attachmentID}", s.requireAuth(s.orderAttachmentServe))
+	mux.HandleFunc("POST /orders/{id}/messages", s.requireAuth(s.orderMessageCreate))
+	mux.HandleFunc("POST /orders/{id}/deliver", s.requireAuth(s.orderDeliver))
+	mux.HandleFunc("POST /orders/{id}/revise", s.requireAuth(s.orderRevise))
+	mux.HandleFunc("POST /orders/{id}/accept", s.requireAuth(s.orderAccept))
+	mux.HandleFunc("POST /orders/{id}/cancel/request", s.requireAuth(s.orderCancelRequest))
+	mux.HandleFunc("POST /orders/{id}/cancel/resolve", s.requireAuth(s.orderCancelResolve))
+	mux.HandleFunc("POST /orders/{id}/dispute", s.requireAuth(s.orderDisputeOpen))
+	mux.HandleFunc("POST /orders/{id}/dispute/resolve", s.requireAuth(s.orderDisputeResolve))
+	mux.HandleFunc("POST /orders/{id}/review", s.requireAuth(s.orderReviewCreate))
+
+	// Notifications.
+	mux.HandleFunc("GET /notifications", s.requireAuth(s.notificationsList))
+
+	// Selling: onboarding, profile, portfolio, and gig management (seller role).
+	mux.HandleFunc("POST /sell/start", s.requireAuth(s.sellStart))
+	mux.HandleFunc("GET /sell", s.requireSeller(s.sellDashboard))
+	mux.HandleFunc("GET /sell/orders", s.requireSeller(s.ordersListSeller))
+	mux.HandleFunc("POST /sell/onboarding/submit", s.requireSeller(s.sellOnboardingSubmit))
+	mux.HandleFunc("GET /sell/profile", s.requireSeller(s.sellProfileForm))
+	mux.HandleFunc("POST /sell/profile", s.requireSeller(s.sellProfileUpdate))
+	mux.HandleFunc("GET /sell/portfolio", s.requireSeller(s.sellPortfolioForm))
+	mux.HandleFunc("POST /sell/portfolio", s.requireSeller(s.sellPortfolioCreate))
+	mux.HandleFunc("GET /sell/gigs/new", s.requireSeller(s.sellGigNew))
+	mux.HandleFunc("POST /sell/gigs", s.requireSeller(s.sellGigCreate))
+	mux.HandleFunc("GET /sell/gigs/{id}/edit", s.requireSeller(s.sellGigEdit))
+	mux.HandleFunc("POST /sell/gigs/{id}", s.requireSeller(s.sellGigUpdate))
+	mux.HandleFunc("POST /sell/gigs/{id}/status", s.requireSeller(s.sellGigStatus))
+	mux.HandleFunc("POST /sell/gigs/{id}/media", s.requireSeller(s.sellGigMedia))
 
 	return mux
 }
@@ -118,13 +178,19 @@ func (s *Server) viewUser(r *http.Request) *components.User {
 		return nil
 	}
 	vu := &components.User{ID: u.ID, Name: u.Name, Email: u.Email}
+	if n, err := s.Store.CountUnreadNotifications(r.Context(), u.ID); err == nil {
+		vu.UnreadCount = n
+	}
 	roles, err := s.Store.UserRoles(r.Context(), u.ID)
 	if err != nil {
 		return vu
 	}
 	for _, role := range roles {
-		if role == store.RoleAdmin {
+		switch role {
+		case store.RoleAdmin:
 			vu.IsAdmin = true
+		case store.RoleSeller:
+			vu.IsSeller = true
 		}
 	}
 	return vu
@@ -158,13 +224,19 @@ func (s *Server) readyz(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) home(w http.ResponseWriter, r *http.Request) {
+	cats, err := s.Store.ListCategories(r.Context())
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	featured, err := s.Store.FeaturedGigs(r.Context(), 6)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
 	body, err := components.Home(components.HomeData{
-		Categories: []components.CategoryCard{
-			{Name: "Design", Slug: "design", Blurb: "Logos, brand kits, and more"},
-			{Name: "Development", Slug: "development", Blurb: "Websites, scripts, and integrations"},
-			{Name: "Writing", Slug: "writing", Blurb: "Copy, editing, and translation"},
-			{Name: "Marketing", Slug: "marketing", Blurb: "Social media, SEO, and ads"},
-		},
+		Categories: toCategoryCards(cats),
+		Featured:   toGigCards(featured),
 	})
 	if err != nil {
 		s.renderError(w, err)

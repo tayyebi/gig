@@ -1,0 +1,37 @@
+{{define "search"}}
+<section class="container">
+  <h1>{{if .CategoryName}}{{.CategoryName}}{{else}}Search gigs{{end}}</h1>
+  <form action="/search" method="get" role="search">
+    <div class="field">
+      <label for="{{fieldid "q"}}">Keywords</label>
+      <input id="{{fieldid "q"}}" type="search" name="q" value="{{.Query}}" autocomplete="off" inputmode="search">
+    </div>
+    <div class="field">
+      <label for="{{fieldid "category"}}">Category</label>
+      <select id="{{fieldid "category"}}" name="category">
+        <option value="">All categories</option>
+        {{range .Categories}}
+        <option value="{{.Slug}}"{{if eq .Slug $.CategorySlug}} selected{{end}}>{{.Name}}</option>
+        {{end}}
+      </select>
+    </div>
+    <div class="field">
+      <label for="{{fieldid "sort"}}">Sort by</label>
+      <select id="{{fieldid "sort"}}" name="sort">
+        <option value="newest"{{if eq .Sort "newest"}} selected{{end}}>Newest</option>
+        <option value="price_asc"{{if eq .Sort "price_asc"}} selected{{end}}>Price: low to high</option>
+        <option value="price_desc"{{if eq .Sort "price_desc"}} selected{{end}}>Price: high to low</option>
+      </select>
+    </div>
+    <button class="btn btn-primary" type="submit">Search</button>
+  </form>
+
+  {{if .Gigs}}
+  <p class="help">{{.Total}} gig{{if ne .Total 1}}s{{end}} found.</p>
+  {{template "giggrid" .Gigs}}
+  {{.Pagination}}
+  {{else}}
+  <p class="muted">No gigs match yet. Try different keywords or check back soon.</p>
+  {{end}}
+</section>
+{{end}}

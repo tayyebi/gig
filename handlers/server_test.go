@@ -45,32 +45,10 @@ func TestReadyzWithoutDB(t *testing.T) {
 	}
 }
 
-func TestHomeRendersLayout(t *testing.T) {
-	s := newTestServer(t)
-	rec := httptest.NewRecorder()
-	s.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d", rec.Code)
-	}
-	body := rec.Body.String()
-	for _, want := range []string{`<html lang="en" dir="ltr">`, `action="/search"`, `app.css`} {
-		if !strings.Contains(body, want) {
-			t.Errorf("home page missing %q", want)
-		}
-	}
-	if strings.Contains(body, "<script") {
-		t.Error("home page must not contain script elements")
-	}
-}
-
-func TestHomeBottomNavOnlyForSignedInUsers(t *testing.T) {
-	s := newTestServer(t)
-	rec := httptest.NewRecorder()
-	s.Routes().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil))
-	if strings.Contains(rec.Body.String(), `class="bottomnav"`) {
-		t.Error("anonymous users must not see the account bottom nav")
-	}
-}
+// TestHomeRendersLayout, TestHomeBottomNavOnlyForSignedInUsers, and
+// TestSearchDoesNotNotFound live in catalog_test.go: home() and search() now
+// query the catalog, so they need the database-backed newAuthServer harness
+// rather than the DB-less newTestServer used above.
 
 func TestNotFound(t *testing.T) {
 	s := newTestServer(t)
