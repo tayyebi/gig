@@ -181,40 +181,40 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 
 ### Provider abstraction
 
-- [ ] Define `Provider` interface in `providers/`
-- [ ] Implement normalized payment types shared across adapters
-- [ ] Implement `PaymentIntent` and `PaymentAttempt` persistence
-- [ ] Implement `PaymentWebhookEvent` with dedup by provider event ID
-- [ ] Implement webhook verification helper (signature, replay, staleness)
+- [x] Define `Provider` interface in `providers/`
+- [x] Implement normalized payment types shared across adapters
+- [x] Implement `PaymentIntent` and `PaymentAttempt` persistence
+- [x] Implement `PaymentWebhookEvent` with dedup by provider event ID
+- [x] Implement webhook verification helper (signature, replay, staleness) — Stripe HMAC-SHA256 verification with a 5-minute timestamp tolerance, hand-rolled against the stdlib-only constraint (no vendored Stripe SDK)
 
 ### Stripe Connect adapter
 
-- [ ] Implement Stripe seller onboarding link/redirect flow
-- [ ] Handle Stripe account status webhooks
-- [ ] Implement Stripe Checkout Session creation with `success_url`/`cancel_url`
-- [ ] Implement payment success, failure, refund, dispute, and payout webhooks
-- [ ] Implement idempotency keys on checkout and refund creation
-- [ ] Implement refund flow with provider reference
-- [ ] Implement `PaymentIntent` transitions from normalized webhook state
-- [ ] Keep secret keys out of client output and logs
+- [ ] Implement Stripe seller onboarding link/redirect flow (deferred — requires a Phase 0 decision on Express vs Custom accounts)
+- [ ] Handle Stripe account status webhooks (deferred with onboarding, above)
+- [x] Implement Stripe Checkout Session creation with `success_url`/`cancel_url`
+- [x] Implement payment success and failure webhooks (`checkout.session.completed`/`expired`/`async_payment_*`); refund, dispute, and payout webhook types are not parsed yet
+- [x] Implement idempotency keys on checkout creation (deterministic per order+attempt); refund idempotency key is plumbed through `providers.RefundInput` but unused until a refund handler exists
+- [ ] Implement refund flow with provider reference — `store.CreateRefund`/`ledger.RefundIssued`/`Provider.Refund` all exist but nothing calls them yet; no admin or buyer-facing refund action
+- [x] Implement `PaymentIntent` transitions from normalized webhook state
+- [x] Keep secret keys out of client output and logs
 
 ### Ledger
 
-- [ ] Implement `LedgerAccount` and `LedgerEntry` double-entry postings
-- [ ] Implement posting for gross buyer funds, platform fee, seller payable
-- [ ] Implement posting for refunds and adjustments
-- [ ] Implement balances: pending earnings, available earnings, platform revenue, refunds, reserves, clearing accounts
-- [ ] Add ledger balance validation test
-- [ ] Implement reconciliation job against Stripe records
+- [x] Implement `LedgerAccount` and `LedgerEntry` double-entry postings
+- [x] Implement posting for gross buyer funds, platform fee, seller payable
+- [ ] Implement posting for refunds and adjustments — `ledger.RefundIssued` is implemented and unit-tested but not wired into any refund flow (see above)
+- [x] Implement balances: pending earnings, available earnings, platform revenue, refunds, reserves, clearing accounts
+- [x] Add ledger balance validation test
+- [x] Implement reconciliation job against Stripe records — `payment.reconcile_sweep` re-checks stale intents directly against the provider
 - [ ] Make reconciliation exceptions visible in admin console
 - [ ] Implement audited, permissioned manual adjustments with reason
 
 ### Admin payment tooling
 
-- [ ] Build admin search by payment ID and provider reference
-- [ ] Build order and payment timeline view
+- [ ] Build admin search by payment ID and provider reference — only a fixed per-order lookup (`/admin/orders/{id}/payments`) exists, not a search form
+- [ ] Build order and payment timeline view — shows the latest intent only, not the full attempt/webhook history
 - [ ] Implement safe webhook retry tool
-- [ ] Build payout queue and failed-payout views
+- [ ] Build payout queue and failed-payout views (payouts are out of scope until Phase 7)
 
 ## Phase 6: Bitcoin and Lightning (BTCPay)
 
@@ -324,10 +324,10 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 
 ## Cross-Cutting Gates
 
-- [ ] No order becomes paid from client-side input alone
-- [ ] Every successful payment produces balanced ledger postings
-- [ ] Seller funds unavailable until acceptance or auto-acceptance
-- [ ] All money-changing requests use idempotency keys
-- [ ] Payment, wallet, and identity secrets absent from client output and logs
-- [ ] Migrations apply cleanly at startup under a single and concurrent instances
-- [ ] All critical financial and state-transition paths covered by automated tests
+- [x] No order becomes paid from client-side input alone — `pending_payment -> paid` only happens inside the verified-webhook job, never on the buyer's return-URL request
+- [x] Every successful payment produces balanced ledger postings — enforced by `ledger.Validate`, re-checked in `store.PostLedgerEntries`, covered by unit tests
+- [x] Seller funds unavailable until acceptance or auto-acceptance — captured funds post to `seller_pending`; `orderAccept` and the auto-accept sweep both call `ledger.EarningsReleased` to move them to `seller_available`
+- [ ] All money-changing requests use idempotency keys — checkout does; refunds and payouts don't exist as reachable flows yet
+- [x] Payment, wallet, and identity secrets absent from client output and logs
+- [x] Migrations apply cleanly at startup under a single and concurrent instances
+- [ ] All critical financial and state-transition paths covered by automated tests — ledger and payment-transition unit tests exist; no integration test yet for the webhook-to-ledger path

@@ -10,16 +10,18 @@ import (
 
 	"github.com/tayyebi/gig/components"
 	"github.com/tayyebi/gig/config"
+	"github.com/tayyebi/gig/providers"
 	"github.com/tayyebi/gig/services"
 	"github.com/tayyebi/gig/store"
 )
 
 // Options configures a handlers.Server.
 type Options struct {
-	Store  *store.Store
-	Log    *slog.Logger
-	Cfg    *config.Config
-	Mailer services.Mailer
+	Store    *store.Store
+	Log      *slog.Logger
+	Cfg      *config.Config
+	Mailer   services.Mailer
+	Provider providers.Provider // nil disables checkout when Cfg.PaymentsEnabled is false
 }
 
 // Server holds shared dependencies for all handlers.
@@ -30,6 +32,7 @@ type Server struct {
 	Mailer         services.Mailer
 	Storage        *services.Storage
 	PrivateStorage *services.Storage
+	Provider       providers.Provider
 	limiter        *services.RateLimiter
 }
 
@@ -49,6 +52,7 @@ func New(opts Options) *Server {
 		Mailer:         opts.Mailer,
 		Storage:        services.NewStorage(opts.Cfg.StorageDir, opts.Cfg.UploadMaxBytes),
 		PrivateStorage: services.NewStorage(opts.Cfg.PrivateStorageDir, opts.Cfg.UploadMaxBytes),
+		Provider:       opts.Provider,
 		limiter:        services.NewRateLimiter(opts.Cfg.AuthRateLimit, opts.Cfg.AuthRateWindow),
 	}
 }
@@ -88,6 +92,8 @@ func (s *Server) Routes() *http.ServeMux {
 
 	// Admin (role-gated).
 	mux.HandleFunc("GET /admin", s.requireRole(store.RoleAdmin, s.adminHome))
+	mux.HandleFunc("GET /admin/payments", s.requireRole(store.RoleAdmin, s.adminPayments))
+	mux.HandleFunc("GET /admin/orders/{id}/payments", s.requireRole(store.RoleAdmin, s.adminOrderPayments))
 
 	// Public catalog.
 	mux.HandleFunc("GET /browse", s.browseCategories)
@@ -105,6 +111,12 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /checkout/{id}/requirements", s.requireAuth(s.checkoutRequirementsSubmit))
 	mux.HandleFunc("GET /checkout/{id}/review", s.requireAuth(s.checkoutReview))
 	mux.HandleFunc("POST /checkout/{id}/confirm", s.requireAuth(s.checkoutConfirm))
+
+	// Payment return paths. The provider redirects the buyer's browser here
+	// after hosted checkout; the order's actual status is never trusted from
+	// this request, only from the verified webhook (PLAN.md section 9).
+	mux.HandleFunc("GET /orders/{id}/pay/return", s.requireAuth(s.paymentReturn))
+	mux.HandleFunc("GET /orders/{id}/pay/cancel", s.requireAuth(s.paymentCancelReturn))
 
 	// Orders: workspace shared by buyer, seller, and admin, gated per action
 	// inside each handler rather than at the route (a single order page must

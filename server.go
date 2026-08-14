@@ -15,6 +15,7 @@ import (
 
 	"github.com/tayyebi/gig/config"
 	"github.com/tayyebi/gig/handlers"
+	"github.com/tayyebi/gig/providers"
 	"github.com/tayyebi/gig/services"
 	"github.com/tayyebi/gig/store"
 )
@@ -29,15 +30,20 @@ type Server struct {
 
 func newServer(cfg *config.Config, log *slog.Logger, st *store.Store) *Server {
 	mailer := services.MailerFromConfig(cfg, log)
+	var provider providers.Provider
+	if cfg.PaymentsEnabled {
+		provider = providers.NewStripe(cfg.StripeSecretKey)
+	}
 	return &Server{
 		cfg:   cfg,
 		log:   log,
 		store: st,
 		handlers: handlers.New(handlers.Options{
-			Store:  st,
-			Log:    log,
-			Cfg:    cfg,
-			Mailer: mailer,
+			Store:    st,
+			Log:      log,
+			Cfg:      cfg,
+			Mailer:   mailer,
+			Provider: provider,
 		}),
 	}
 }
@@ -57,6 +63,10 @@ func (s *Server) handler() http.Handler {
 	// never mounted here, and are only ever streamed back through the
 	// authorization-checked handler at GET /orders/{id}/attachments/{id}.
 	mux.Handle("GET /media/", http.StripPrefix("/media/", http.FileServer(http.Dir(s.cfg.StorageDir))))
+	// Provider webhooks are server-to-server calls with no session cookie and
+	// no CSRF token; they are registered outside s.handlers.Chain and verify
+	// the provider's own request signature instead (PLAN.md section 9).
+	mux.HandleFunc("POST /webhooks/stripe", s.handlers.StripeWebhook)
 	mux.Handle("/", s.handlers.Chain(s.handlers.Routes()))
 
 	var h http.Handler = mux

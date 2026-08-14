@@ -323,5 +323,6 @@ func (s *Server) checkoutConfirm(w http.ResponseWriter, r *http.Request) {
 
 	s.audit(r.Context(), &u.ID, r, "order.created", "order", fmt.Sprintf("%d", order.ID),
 		map[string]any{"gig_id": gig.ID, "total_minor_units": order.TotalMinorUnits})
-	http.Redirect(w, r, fmt.Sprintf("/orders/%d", order.ID), http.StatusSeeOther)
+
+	s.startPayment(w, r, u, order)
 }

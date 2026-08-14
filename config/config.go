@@ -66,6 +66,17 @@ type Config struct {
 	PlatformFeeBps  int
 	AutoAcceptAfter time.Duration
 
+	// Payments (Stripe Connect). Secret/webhook values are optional so dev and
+	// test environments can run without a Stripe account; the web role refuses
+	// to start with them unset only in production (see validate).
+	PaymentsEnabled          bool
+	PaymentCurrency          string
+	StripeSecretKey          string
+	StripePublishableKey    string
+	StripeWebhookSecret      string
+	StripeConnectClientID    string
+	PaymentReconcileInterval time.Duration
+
 	// Jobs
 	JobPollInterval   time.Duration
 	JobClaimTimeout   time.Duration
@@ -177,6 +188,18 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	if c.PaymentsEnabled, err = envBool("PAYMENTS_ENABLED", false); err != nil {
+		return nil, err
+	}
+	c.PaymentCurrency = strings.ToLower(env("PAYMENT_CURRENCY", "usd"))
+	c.StripeSecretKey = env("STRIPE_SECRET_KEY", "")
+	c.StripePublishableKey = env("STRIPE_PUBLISHABLE_KEY", "")
+	c.StripeWebhookSecret = env("STRIPE_WEBHOOK_SECRET", "")
+	c.StripeConnectClientID = env("STRIPE_CONNECT_CLIENT_ID", "")
+	if c.PaymentReconcileInterval, err = envDuration("PAYMENT_RECONCILE_INTERVAL", 15*time.Minute); err != nil {
+		return nil, err
+	}
+
 	if c.JobPollInterval, err = envDuration("JOB_POLL_INTERVAL", time.Second); err != nil {
 		return nil, err
 	}
@@ -237,6 +260,14 @@ func (c *Config) validate() error {
 	}
 	if c.TOTPSkew < 0 {
 		return fmt.Errorf("TOTP_SKEW cannot be negative")
+	}
+	if c.PaymentsEnabled && c.Environment == EnvProd {
+		if c.StripeSecretKey == "" {
+			return errRequired("STRIPE_SECRET_KEY")
+		}
+		if c.StripeWebhookSecret == "" {
+			return errRequired("STRIPE_WEBHOOK_SECRET")
+		}
 	}
 	return nil
 }

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/tayyebi/gig/components"
+	"github.com/tayyebi/gig/ledger"
 	"github.com/tayyebi/gig/services"
 	"github.com/tayyebi/gig/store"
 )
@@ -355,6 +356,17 @@ func (s *Server) flashError(r *http.Request, text string) {
 	}
 }
 
+// flashNotice sets a non-error flash message, e.g. a payment status update.
+func (s *Server) flashNotice(r *http.Request, text string) {
+	sess := s.sessionFrom(r)
+	if sess == nil {
+		return
+	}
+	if err := s.Store.SetFlash(r.Context(), sess.ID, &store.Flash{Kind: "success", Text: text}); err != nil {
+		s.Log.Error("set flash", "error", err)
+	}
+}
+
 func orderRedirect(id int64) string { return fmt.Sprintf("/orders/%d", id) }
 
 // orderMessageCreate posts a message to an order's thread.
@@ -531,10 +543,41 @@ func (s *Server) orderAccept(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, err)
 		return
 	}
+	s.releaseSellerEarnings(r.Context(), access.Order)
 	u := s.userFrom(r)
 	s.audit(r.Context(), &u.ID, r, "order.accepted", "order", fmt.Sprintf("%d", access.Order.ID), nil)
 	s.notify(r.Context(), access.Order.SellerID, "order.accepted", fmt.Sprintf("Order #%d was accepted", access.Order.ID), orderRedirect(access.Order.ID))
 	http.Redirect(w, r, orderRedirect(access.Order.ID), http.StatusSeeOther)
+}
+
+// releaseSellerEarnings moves a seller's payable for an order from pending
+// to available earnings (PLAN.md section 8, step 11). It is a no-op, not an
+// error, when payments are disabled or the order was never captured through
+// the ledger (e.g. it predates Phase 5, or checkout confirmed without a
+// provider configured) — there is nothing to release in that case.
+func (s *Server) releaseSellerEarnings(ctx context.Context, order *store.Order) {
+	intent, err := s.Store.LatestPaymentIntentForOrder(ctx, order.ID)
+	if err != nil {
+		// No captured payment intent for this order (payments disabled, or
+		// the order predates Phase 5): nothing was ever posted to
+		// seller_pending, so there is nothing to release.
+		return
+	}
+	if intent.Status != services.PaymentSucceeded {
+		return
+	}
+	payable := order.TotalMinorUnits - order.PlatformFeeMinorUnits
+	if payable <= 0 {
+		return
+	}
+	entries, err := ledger.EarningsReleased(order.ID, order.SellerID, payable, strings.ToLower(order.Currency))
+	if err != nil {
+		s.Log.Error("build earnings-released ledger entries", "order_id", order.ID, "error", err)
+		return
+	}
+	if _, err := s.Store.PostLedgerEntries(ctx, entries); err != nil {
+		s.Log.Error("post earnings-released ledger entries", "order_id", order.ID, "error", err)
+	}
 }
 
 // orderCancelRequest lets either party ask to cancel an in-progress order.

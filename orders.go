@@ -3,8 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
+	"github.com/tayyebi/gig/ledger"
+	"github.com/tayyebi/gig/services"
 	"github.com/tayyebi/gig/store"
 )
 
@@ -36,6 +39,7 @@ func orderAutoAcceptSweep(ctx context.Context, jc *jobContext, _ store.Job) erro
 		return fmt.Errorf("auto-accept orders: %w", err)
 	}
 	for _, o := range orders {
+		releaseSellerEarnings(ctx, jc, &o)
 		notifyOrderParty(ctx, jc, o.SellerID, "order.accepted",
 			fmt.Sprintf("Order #%d was automatically accepted", o.ID), fmt.Sprintf("/orders/%d", o.ID))
 	}
@@ -46,6 +50,30 @@ func orderAutoAcceptSweep(ctx context.Context, jc *jobContext, _ store.Job) erro
 		return fmt.Errorf("reschedule order auto-accept sweep: %w", err)
 	}
 	return nil
+}
+
+// releaseSellerEarnings moves a seller's payable for an order from pending
+// to available earnings once it is accepted or auto-accepted (PLAN.md
+// section 8, step 11). Mirrors handlers.Server.releaseSellerEarnings; it is
+// a no-op when the order was never captured through the ledger (payments
+// disabled, or the order predates Phase 5).
+func releaseSellerEarnings(ctx context.Context, jc *jobContext, o *store.Order) {
+	intent, err := jc.Store.LatestPaymentIntentForOrder(ctx, o.ID)
+	if err != nil || intent.Status != services.PaymentSucceeded {
+		return
+	}
+	payable := o.TotalMinorUnits - o.PlatformFeeMinorUnits
+	if payable <= 0 {
+		return
+	}
+	entries, err := ledger.EarningsReleased(o.ID, o.SellerID, payable, strings.ToLower(o.Currency))
+	if err != nil {
+		jc.Log.Error("build earnings-released ledger entries", "order_id", o.ID, "error", err)
+		return
+	}
+	if _, err := jc.Store.PostLedgerEntries(ctx, entries); err != nil {
+		jc.Log.Error("post earnings-released ledger entries", "order_id", o.ID, "error", err)
+	}
 }
 
 // notifyOrderParty mirrors handlers.Server.notify: record the in-app

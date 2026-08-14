@@ -11,6 +11,7 @@ import (
 
 	"github.com/tayyebi/gig/config"
 	"github.com/tayyebi/gig/migrations"
+	"github.com/tayyebi/gig/providers"
 	"github.com/tayyebi/gig/services"
 	"github.com/tayyebi/gig/store"
 )
@@ -81,14 +82,21 @@ func runWorker(cfg *config.Config, log *slog.Logger) error {
 	defer st.Close()
 
 	mailer := services.MailerFromConfig(cfg, log)
-	q := newJobQueue(cfg, log, st, mailer)
-	jc := &jobContext{Store: st, Log: log, Cfg: cfg, Mailer: mailer}
+	var provider providers.Provider
+	if cfg.PaymentsEnabled {
+		provider = providers.NewStripe(cfg.StripeSecretKey)
+	}
+	q := newJobQueue(cfg, log, st, mailer, provider)
+	jc := &jobContext{Store: st, Log: log, Cfg: cfg, Mailer: mailer, Provider: provider}
 	if err := registerMaintenance(q, jc); err != nil {
 		return fmt.Errorf("register maintenance jobs: %w", err)
 	}
 	registerNotifications(q)
 	if err := registerOrderJobs(q, jc); err != nil {
 		return fmt.Errorf("register order jobs: %w", err)
+	}
+	if err := registerPaymentJobs(q, jc); err != nil {
+		return fmt.Errorf("register payment jobs: %w", err)
 	}
 	return q.Run(ctx)
 }
