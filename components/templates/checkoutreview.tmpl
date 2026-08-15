@@ -22,12 +22,27 @@
   </table>
 
   <h2>Payment</h2>
-  <p class="help">Card, Bitcoin/Lightning, and stablecoin checkout are not connected yet. Confirming creates your order with payment pending; you will be notified here once a payment method is available for it.</p>
-
+  {{if .PaymentMethods}}
+  <form method="post" action="/checkout/{{.DraftID}}/confirm" novalidate>
+    {{template "csrffield" .CSRF}}
+    <fieldset>
+      <legend>Choose how to pay</legend>
+      {{range .PaymentMethods}}
+      <label>
+        <input type="radio" name="payment_method" value="{{.Value}}" {{if .Checked}}checked{{end}} required>
+        {{.Label}}
+      </label>
+      {{end}}
+    </fieldset>
+    <button class="btn btn-primary" type="submit">Confirm order</button>
+  </form>
+  {{else}}
+  <p class="help">Payment collection is not enabled yet. Confirming creates your order with payment pending; you will be notified here once a payment method is available for it.</p>
   <form method="post" action="/checkout/{{.DraftID}}/confirm" novalidate>
     {{template "csrffield" .CSRF}}
     <button class="btn btn-primary" type="submit">Confirm order</button>
   </form>
+  {{end}}
   <p><a href="/checkout/{{.DraftID}}/requirements">Back to requirements</a></p>
 </section>
 {{end}}

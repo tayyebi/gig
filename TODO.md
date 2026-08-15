@@ -220,17 +220,17 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 
 ### BTCPay adapter
 
-- [ ] Implement BTCPay invoice creation via API
-- [ ] Persist invoice ID, destination metadata, amount, conversion snapshot, confirmations, expiry
-- [ ] Redirect buyer to hosted invoice page
-- [ ] Implement invoice state mapping (paid, confirmed, fully confirmed) per risk policy
-- [ ] Implement webhook verification and idempotent processing
-- [ ] Implement expiry handling and status refresh via meta-refresh page
-- [ ] Implement underpayment, overpayment, and partial payment handling
-- [ ] Implement refund handling for BTCPay
-- [ ] Define confirmations-before-fulfillment policy in config
-- [ ] Add reconciliation job scanning BTCPay for missed webhooks
-- [ ] Add admin visibility for BTCPay invoices
+- [x] Implement BTCPay invoice creation via API — `providers/btcpay.go` `CreatePayment`, Greenfield REST over `net/http`, no SDK
+- [x] Persist invoice ID, destination metadata, amount, conversion snapshot, confirmations, expiry — reuses the existing `payment_intents`/`payment_attempts` tables (provider-tagged), no schema change needed
+- [x] Redirect buyer to hosted invoice page — checkout method selector routes `bitcoin`/`lightning` to BTCPay's `CheckoutLink`
+- [x] Implement invoice state mapping (paid, confirmed, fully confirmed) per risk policy — `normalizeInvoiceStatus`; fulfillment gate is BTCPay's own `Settled` status
+- [x] Implement webhook verification and idempotent processing — `BTCPay-Sig` HMAC-SHA256 verify + 5-minute timestamp tolerance, dedup by delivery ID via the existing `payment.webhook_process` job path
+- [x] Implement expiry handling and status refresh via meta-refresh page — `handlers/payments.go` `btcpayInvoiceStatus`
+- [x] Implement underpayment, overpayment, and partial payment handling — `normalizeInvoiceStatus` treats `PaidPartial`/`PaidLate` as needing manual review rather than silent success; surfaced via reconciliation sweep and admin payment view, not a dedicated queue
+- [x] Implement refund handling for BTCPay — `Refund` creates a pull payment (BTCPay refunds are buyer-claimed, not instant, so status is always `processing` until reconciled)
+- [x] Define confirmations-before-fulfillment policy in config — `config.BTCPayRequiredConfirmations`
+- [x] Add reconciliation job scanning BTCPay for missed webhooks — reuses the existing provider-agnostic stale-intent sweep, now dispatched per-provider via `providers.Registry`
+- [ ] Add admin visibility for BTCPay invoices — falls back to the existing generic per-order payment-intent view; no BTCPay-specific admin page yet
 
 ## Phase 7: Stablecoin Payments and Wallet Payouts
 

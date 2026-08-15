@@ -31,21 +31,45 @@ func pageWithRawBody(title, body string) components.PageData {
 // handlers cannot import package main.
 const paymentWebhookJobKind = "payment.webhook_process"
 
+// paymentMethodProvider maps the payment method selected on the checkout
+// review step to the provider name that handles it. "card" -> Stripe;
+// "bitcoin" and "lightning" both route to BTCPay, which offers both rails
+// from the same hosted invoice depending on the store's wallet configuration
+// (PLAN.md section 9).
+func paymentMethodProvider(method string) string {
+	switch method {
+	case "bitcoin", "lightning":
+		return "btcpay"
+	default:
+		return "stripe"
+	}
+}
+
 // startPayment creates a payment intent for a freshly confirmed order and
-// redirects the buyer to the provider's hosted checkout page. If no provider
-// is configured (payments not operationally enabled), the order is left in
-// pending_payment and the buyer is sent to the order page with a notice,
-// same as before Phase 5.
-func (s *Server) startPayment(w http.ResponseWriter, r *http.Request, u *store.User, order *store.Order) {
-	if !s.Cfg.PaymentsEnabled || s.Provider == nil {
+// redirects the buyer to the chosen provider's hosted checkout page. If no
+// provider is configured at all (payments not operationally enabled), or
+// the requested method's provider specifically is not configured, the order
+// is left in pending_payment and the buyer is sent to the order page with a
+// notice, same as before Phase 5.
+func (s *Server) startPayment(w http.ResponseWriter, r *http.Request, u *store.User, order *store.Order, method string) {
+	if !s.Cfg.PaymentsEnabled || s.Providers.Empty() {
 		s.flashNotice(r, "Payment collection is not enabled yet; this order is on hold pending payment.")
+		http.Redirect(w, r, fmt.Sprintf("/orders/%d", order.ID), http.StatusSeeOther)
+		return
+	}
+	if method == "" {
+		method = "card"
+	}
+	provider, ok := s.Providers.Get(paymentMethodProvider(method))
+	if !ok {
+		s.flashError(r, "That payment method is not available right now. Please choose another.")
 		http.Redirect(w, r, fmt.Sprintf("/orders/%d", order.ID), http.StatusSeeOther)
 		return
 	}
 
 	currency := strings.ToLower(order.Currency)
 	key := services.IdempotencyKey("checkout", order.ID, 0)
-	intent, err := s.Store.CreatePaymentIntent(r.Context(), order.ID, s.Provider.Name(), "card", order.TotalMinorUnits, currency, key)
+	intent, err := s.Store.CreatePaymentIntent(r.Context(), order.ID, provider.Name(), method, order.TotalMinorUnits, currency, key)
 	if errors.Is(err, store.ErrDuplicateIdempotencyKey) {
 		intent, err = s.Store.GetPaymentIntentByIdempotencyKey(r.Context(), key)
 	}
@@ -69,9 +93,9 @@ func (s *Server) startPayment(w http.ResponseWriter, r *http.Request, u *store.U
 		CancelURL:      fmt.Sprintf("%s/orders/%d/pay/cancel", s.Cfg.BaseURL, order.ID),
 		BuyerEmail:     u.Email,
 	}
-	session, err := s.Provider.CreatePayment(r.Context(), in)
+	session, err := provider.CreatePayment(r.Context(), in)
 	if err != nil {
-		s.Log.Error("create provider payment session", "error", err, "order_id", order.ID)
+		s.Log.Error("create provider payment session", "error", err, "order_id", order.ID, "provider", provider.Name())
 		s.flashError(r, "We could not start payment for this order. Please try again.")
 		http.Redirect(w, r, fmt.Sprintf("/orders/%d", order.ID), http.StatusSeeOther)
 		return
@@ -87,7 +111,7 @@ func (s *Server) startPayment(w http.ResponseWriter, r *http.Request, u *store.U
 	}
 
 	s.audit(r.Context(), &u.ID, r, "payment.intent_created", "payment_intent", strconv.FormatInt(intent.ID, 10),
-		map[string]any{"order_id": order.ID, "provider": s.Provider.Name(), "amount_minor_units": order.TotalMinorUnits})
+		map[string]any{"order_id": order.ID, "provider": provider.Name(), "amount_minor_units": order.TotalMinorUnits})
 	http.Redirect(w, r, session.CheckoutURL, http.StatusSeeOther)
 }
 
@@ -116,12 +140,66 @@ func (s *Server) paymentCancelReturn(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, fmt.Sprintf("/orders/%d", id), http.StatusSeeOther)
 }
 
-// stripeProvider narrows s.Provider to the Stripe adapter for Connect
-// onboarding, which is Stripe-specific and not part of the generic Provider
-// interface used for payment collection.
+// btcpayInvoiceStatus is a lightweight, zero-JavaScript polling page for a
+// BTCPay invoice: it meta-refreshes every few seconds while the payment is
+// still pending or processing (an on-chain payment can take a while to
+// reach BTCPay's configured confirmation speed policy), and forwards the
+// buyer to the order page once the webhook has resolved it one way or the
+// other (PLAN.md section 9, "status refresh via meta-refresh page").
+func (s *Server) btcpayInvoiceStatus(w http.ResponseWriter, r *http.Request) {
+	access, ok := s.loadOrderAccess(w, r)
+	if !ok {
+		return
+	}
+	intent, err := s.Store.LatestPaymentIntentForOrder(r.Context(), access.Order.ID)
+	if err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/orders/%d", access.Order.ID), http.StatusSeeOther)
+		return
+	}
+	if intent.Provider != "btcpay" || intent.Status == services.PaymentSucceeded ||
+		intent.Status == services.PaymentFailed || intent.Status == services.PaymentExpired || intent.Status == services.PaymentCanceled {
+		http.Redirect(w, r, fmt.Sprintf("/orders/%d", access.Order.ID), http.StatusSeeOther)
+		return
+	}
+
+	statusText := "waiting for payment"
+	if intent.Status == services.PaymentProcessing {
+		statusText = "payment detected, waiting for confirmation"
+	}
+	body := fmt.Sprintf(`<section class="container">
+<h1>Bitcoin / Lightning payment</h1>
+<p>Status: %s</p>
+<p class="help">This page refreshes automatically. Once BTCPay confirms your payment, order #%d will move to in progress.</p>
+<p><a href="%s">Continue to your Bitcoin/Lightning invoice</a></p>
+<p><a href="/orders/%d">Back to order</a></p>
+</section>`, html.EscapeString(statusText), access.Order.ID, html.EscapeString(intent.CheckoutURL), access.Order.ID)
+
+	p := pageWithRawBody("Bitcoin / Lightning payment", body)
+	p.MetaRefresh = 5
+	s.render(w, r, http.StatusOK, p)
+}
+
+// stripeProvider narrows the registered "stripe" provider to the Stripe
+// adapter for Connect onboarding, which is Stripe-specific and not part of
+// the generic Provider interface used for payment collection.
 func (s *Server) stripeProvider() (*providers.Stripe, bool) {
-	sp, ok := s.Provider.(*providers.Stripe)
+	p, ok := s.Providers.Get("stripe")
+	if !ok {
+		return nil, false
+	}
+	sp, ok := p.(*providers.Stripe)
 	return sp, ok
+}
+
+// btcpayProvider narrows the registered "btcpay" provider to the BTCPay
+// adapter, for the webhook handler below.
+func (s *Server) btcpayProvider() (*providers.BTCPay, bool) {
+	p, ok := s.Providers.Get("btcpay")
+	if !ok {
+		return nil, false
+	}
+	bp, ok := p.(*providers.BTCPay)
+	return bp, ok
 }
 
 // sellOnboardingStripeStart creates (if needed) a Stripe Express account for
@@ -199,7 +277,8 @@ func (s *Server) sellOnboardingStripeReturn(w http.ResponseWriter, r *http.Reque
 // retry storms. This handler is registered outside the session/CSRF chain
 // (root server.go) since it is a server-to-server call with no session.
 func (s *Server) StripeWebhook(w http.ResponseWriter, r *http.Request) {
-	if s.Provider == nil {
+	sp, ok := s.stripeProvider()
+	if !ok {
 		http.Error(w, "payments not configured", http.StatusServiceUnavailable)
 		return
 	}
@@ -209,13 +288,47 @@ func (s *Server) StripeWebhook(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	ctx := providers.WithWebhookSecret(r.Context(), s.Cfg.StripeWebhookSecret)
-	evt, err := s.Provider.VerifyWebhook(ctx, r, body)
+	evt, err := sp.VerifyWebhook(ctx, r, body)
 	if err != nil {
 		s.Log.Warn("stripe webhook verification failed", "error", err)
 		http.Error(w, "invalid signature", http.StatusBadRequest)
 		return
 	}
+	s.receiveWebhookEvent(w, r, body, evt)
+}
 
+// BTCPayWebhook receives and verifies BTCPay invoice webhook deliveries. It
+// follows the same verify-dedupe-enqueue-and-ack pattern as StripeWebhook,
+// registered outside the session/CSRF chain since it is a server-to-server
+// call with no session (PLAN.md section 9: "process invoice and settlement
+// webhooks idempotently").
+func (s *Server) BTCPayWebhook(w http.ResponseWriter, r *http.Request) {
+	bp, ok := s.btcpayProvider()
+	if !ok {
+		http.Error(w, "payments not configured", http.StatusServiceUnavailable)
+		return
+	}
+	body, err := io.ReadAll(io.LimitReader(r.Body, 1<<20))
+	if err != nil {
+		http.Error(w, "bad request", http.StatusBadRequest)
+		return
+	}
+	ctx := providers.WithBTCPayWebhookSecret(r.Context(), s.Cfg.BTCPayWebhookSecret)
+	evt, err := bp.VerifyWebhook(ctx, r, body)
+	if err != nil {
+		s.Log.Warn("btcpay webhook verification failed", "error", err)
+		http.Error(w, "invalid signature", http.StatusBadRequest)
+		return
+	}
+	s.receiveWebhookEvent(w, r, body, evt)
+}
+
+// receiveWebhookEvent does the minimum synchronous work shared by every
+// provider webhook endpoint — dedupe-insert the raw, already-verified event
+// — then acks immediately and enqueues the actual processing as a job, so a
+// slow or failing side effect never causes the provider to see a timeout
+// and retry storms.
+func (s *Server) receiveWebhookEvent(w http.ResponseWriter, r *http.Request, body []byte, evt providers.VerifiedEvent) {
 	sum := sha256.Sum256(body)
 	hash := hex.EncodeToString(sum[:])
 	_, inserted, err := s.Store.InsertWebhookEvent(r.Context(), evt.Provider, evt.EventID, evt.EventType, body, hash)
@@ -367,14 +480,15 @@ func (s *Server) adminOrderRefund(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, fmt.Sprintf("/admin/orders/%d/payments", orderID), http.StatusSeeOther)
 		return
 	}
-	if s.Provider == nil {
+	provider, ok := s.Providers.Get(intent.Provider)
+	if !ok {
 		s.flashError(r, "Payments are not enabled.")
 		http.Redirect(w, r, fmt.Sprintf("/admin/orders/%d/payments", orderID), http.StatusSeeOther)
 		return
 	}
 
 	amount := order.TotalMinorUnits
-	result, err := s.Provider.Refund(r.Context(), providers.RefundInput{
+	result, err := provider.Refund(r.Context(), providers.RefundInput{
 		ProviderRef:    intent.ChargeRef,
 		AmountMinor:    amount,
 		Currency:       intent.Currency,

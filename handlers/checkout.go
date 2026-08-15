@@ -228,6 +228,23 @@ func (s *Server) checkoutRequirementsSubmit(w http.ResponseWriter, r *http.Reque
 	http.Redirect(w, r, fmt.Sprintf("/checkout/%d/review", draft.ID), http.StatusSeeOther)
 }
 
+// availablePaymentMethods builds the review step's payment-method options
+// from whichever provider adapters are actually configured. Card (Stripe)
+// is offered first and pre-selected when available; Bitcoin/Lightning
+// (BTCPay) is offered whenever the "btcpay" provider is registered.
+func (s *Server) availablePaymentMethods() []components.CheckoutPaymentMethodOption {
+	var opts []components.CheckoutPaymentMethodOption
+	if s.Providers.Has("stripe") {
+		opts = append(opts, components.CheckoutPaymentMethodOption{Value: "card", Label: "Card (Stripe)", Checked: true})
+	}
+	if s.Providers.Has("btcpay") {
+		opts = append(opts, components.CheckoutPaymentMethodOption{
+			Value: "bitcoin", Label: "Bitcoin / Lightning (BTCPay)", Checked: len(opts) == 0,
+		})
+	}
+	return opts
+}
+
 // checkoutReviewData recomputes authoritative totals from stored package/
 // add-on prices for both the review page and the confirm handler, so the
 // two can never disagree about what the buyer is about to pay.
@@ -269,11 +286,12 @@ func (s *Server) checkoutReview(w http.ResponseWriter, r *http.Request) {
 	}
 	body, err := components.CheckoutReviewPage(components.CheckoutReviewData{
 		DraftID: draft.ID, GigSlug: gig.Slug, GigTitle: gig.Title, Requirements: draft.Requirements,
-		Items:       items,
-		Subtotal:    formatMoney(totals.SubtotalMinorUnits, pkg.Currency),
-		PlatformFee: formatMoney(totals.PlatformFeeMinorUnits, pkg.Currency),
-		Total:       formatMoney(totals.TotalMinorUnits, pkg.Currency),
-		CSRF:        sess.CSRF,
+		Items:          items,
+		Subtotal:       formatMoney(totals.SubtotalMinorUnits, pkg.Currency),
+		PlatformFee:    formatMoney(totals.PlatformFeeMinorUnits, pkg.Currency),
+		Total:          formatMoney(totals.TotalMinorUnits, pkg.Currency),
+		PaymentMethods: s.availablePaymentMethods(),
+		CSRF:           sess.CSRF,
 	})
 	if err != nil {
 		s.renderError(w, err)
@@ -299,6 +317,11 @@ func (s *Server) checkoutConfirm(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, fmt.Sprintf("/checkout/%d/requirements", draft.ID), http.StatusSeeOther)
 		return
 	}
+	if err := r.ParseForm(); err != nil {
+		s.renderError(w, err)
+		return
+	}
+	method := r.FormValue("payment_method")
 	addons := selectedAddons(gig, draft.AddonIDs)
 	_, totals := checkoutReviewData(pkg, addons, s.Cfg.PlatformFeeBps)
 
@@ -324,5 +347,5 @@ func (s *Server) checkoutConfirm(w http.ResponseWriter, r *http.Request) {
 	s.audit(r.Context(), &u.ID, r, "order.created", "order", fmt.Sprintf("%d", order.ID),
 		map[string]any{"gig_id": gig.ID, "total_minor_units": order.TotalMinorUnits})
 
-	s.startPayment(w, r, u, order)
+	s.startPayment(w, r, u, order, method)
 }

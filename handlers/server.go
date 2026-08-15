@@ -17,11 +17,11 @@ import (
 
 // Options configures a handlers.Server.
 type Options struct {
-	Store    *store.Store
-	Log      *slog.Logger
-	Cfg      *config.Config
-	Mailer   services.Mailer
-	Provider providers.Provider // nil disables checkout when Cfg.PaymentsEnabled is false
+	Store     *store.Store
+	Log       *slog.Logger
+	Cfg       *config.Config
+	Mailer    services.Mailer
+	Providers providers.Registry // empty disables checkout when Cfg.PaymentsEnabled is false
 }
 
 // Server holds shared dependencies for all handlers.
@@ -32,7 +32,7 @@ type Server struct {
 	Mailer         services.Mailer
 	Storage        *services.Storage
 	PrivateStorage *services.Storage
-	Provider       providers.Provider
+	Providers      providers.Registry
 	limiter        *services.RateLimiter
 }
 
@@ -52,7 +52,7 @@ func New(opts Options) *Server {
 		Mailer:         opts.Mailer,
 		Storage:        services.NewStorage(opts.Cfg.StorageDir, opts.Cfg.UploadMaxBytes),
 		PrivateStorage: services.NewStorage(opts.Cfg.PrivateStorageDir, opts.Cfg.UploadMaxBytes),
-		Provider:       opts.Provider,
+		Providers:      opts.Providers,
 		limiter:        services.NewRateLimiter(opts.Cfg.AuthRateLimit, opts.Cfg.AuthRateWindow),
 	}
 }
@@ -94,6 +94,7 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /admin", s.requireRole(store.RoleAdmin, s.adminHome))
 	mux.HandleFunc("GET /admin/payments", s.requireRole(store.RoleAdmin, s.adminPayments))
 	mux.HandleFunc("GET /admin/orders/{id}/payments", s.requireRole(store.RoleAdmin, s.adminOrderPayments))
+	mux.HandleFunc("GET /orders/{id}/pay/btcpay-status", s.requireAuth(s.btcpayInvoiceStatus))
 	mux.HandleFunc("POST /admin/orders/{id}/refund", s.requireRole(store.RoleAdmin, s.adminOrderRefund))
 
 	// Public catalog.

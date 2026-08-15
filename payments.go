@@ -27,7 +27,7 @@ const paymentReconcileSweepKind = "payment.reconcile_sweep"
 func registerPaymentJobs(q *jobQueue, jc *jobContext) error {
 	q.Register(paymentWebhookProcessKind, processPaymentWebhook)
 	q.Register(paymentReconcileSweepKind, paymentReconcileSweep)
-	if jc.Provider == nil {
+	if jc.Providers.Empty() {
 		return nil
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
@@ -49,12 +49,13 @@ type paymentWebhookPayload struct {
 // leaves the webhook event unmarked so the job queue's retry/backoff tries
 // again; nothing here is destructive to retry.
 func processPaymentWebhook(ctx context.Context, jc *jobContext, job store.Job) error {
-	if jc.Provider == nil {
-		return fmt.Errorf("payment webhook received but no provider is configured")
-	}
 	var payload paymentWebhookPayload
 	if err := json.Unmarshal(job.Payload, &payload); err != nil {
 		return fmt.Errorf("decode webhook job payload: %w", err)
+	}
+	provider, ok := jc.Providers.Get(payload.Provider)
+	if !ok {
+		return fmt.Errorf("payment webhook received for provider %q, which is not configured", payload.Provider)
 	}
 	event, err := jc.Store.GetWebhookEventByProviderEventID(ctx, payload.Provider, payload.EventID)
 	if err != nil {
@@ -64,7 +65,7 @@ func processPaymentWebhook(ctx context.Context, jc *jobContext, job store.Job) e
 		return nil // already handled by a prior attempt; nothing left to do
 	}
 
-	evt, err := jc.Provider.ParseEvent(ctx, event.Payload)
+	evt, err := provider.ParseEvent(ctx, event.Payload)
 	if err != nil {
 		return fmt.Errorf("parse webhook payload: %w", err)
 	}
@@ -181,13 +182,18 @@ func failPaymentForOrder(ctx context.Context, jc *jobContext, intent *store.Paym
 // processing directly against the provider, in case its webhook was never
 // delivered, then reschedules itself.
 func paymentReconcileSweep(ctx context.Context, jc *jobContext, _ store.Job) error {
-	if jc.Provider != nil {
+	if !jc.Providers.Empty() {
 		intents, err := jc.Store.ListStalePaymentIntents(ctx, jc.Cfg.PaymentReconcileInterval, 100)
 		if err != nil {
 			return fmt.Errorf("list stale payment intents: %w", err)
 		}
 		for _, intent := range intents {
-			payment, err := jc.Provider.Payment(ctx, intent.ProviderRef)
+			provider, ok := jc.Providers.Get(intent.Provider)
+			if !ok {
+				jc.Log.Warn("reconcile: no provider configured for intent", "intent_id", intent.ID, "provider", intent.Provider)
+				continue
+			}
+			payment, err := provider.Payment(ctx, intent.ProviderRef)
 			if err != nil {
 				jc.Log.Warn("reconcile: fetch provider payment failed", "intent_id", intent.ID, "error", err)
 				continue

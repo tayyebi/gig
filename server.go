@@ -30,22 +30,37 @@ type Server struct {
 
 func newServer(cfg *config.Config, log *slog.Logger, st *store.Store) *Server {
 	mailer := services.MailerFromConfig(cfg, log)
-	var provider providers.Provider
-	if cfg.PaymentsEnabled {
-		provider = providers.NewStripe(cfg.StripeSecretKey)
-	}
+	registry := buildProviderRegistry(cfg)
 	return &Server{
 		cfg:   cfg,
 		log:   log,
 		store: st,
 		handlers: handlers.New(handlers.Options{
-			Store:    st,
-			Log:      log,
-			Cfg:      cfg,
-			Mailer:   mailer,
-			Provider: provider,
+			Store:     st,
+			Log:       log,
+			Cfg:       cfg,
+			Mailer:    mailer,
+			Providers: registry,
 		}),
 	}
+}
+
+// buildProviderRegistry constructs the set of active payment provider
+// adapters from configuration. Each adapter is included only when its
+// required credentials are present, so a deployment can enable Stripe,
+// BTCPay, both, or neither independently (PLAN.md section 9).
+func buildProviderRegistry(cfg *config.Config) providers.Registry {
+	if !cfg.PaymentsEnabled {
+		return providers.Registry{}
+	}
+	var ps []providers.Provider
+	if cfg.StripeSecretKey != "" {
+		ps = append(ps, providers.NewStripe(cfg.StripeSecretKey))
+	}
+	if cfg.BTCPayURL != "" && cfg.BTCPayAPIKey != "" && cfg.BTCPayStoreID != "" {
+		ps = append(ps, providers.NewBTCPay(cfg.BTCPayURL, cfg.BTCPayAPIKey, cfg.BTCPayStoreID))
+	}
+	return providers.NewRegistry(ps...)
 }
 
 // handler builds the full middleware-wrapped route handler.
@@ -67,6 +82,7 @@ func (s *Server) handler() http.Handler {
 	// no CSRF token; they are registered outside s.handlers.Chain and verify
 	// the provider's own request signature instead (PLAN.md section 9).
 	mux.HandleFunc("POST /webhooks/stripe", s.handlers.StripeWebhook)
+	mux.HandleFunc("POST /webhooks/btcpay", s.handlers.BTCPayWebhook)
 	mux.Handle("/", s.handlers.Chain(s.handlers.Routes()))
 
 	var h http.Handler = mux

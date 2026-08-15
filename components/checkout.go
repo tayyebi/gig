@@ -36,19 +36,28 @@ type CheckoutLineItem struct {
 	Price string
 }
 
-// CheckoutReviewData backs the final checkout review, payment-method notice,
-// and confirm step. There is no live payment provider yet (Phase 5), so the
-// only "method" on offer is confirming the order as pending payment.
+// CheckoutPaymentMethodOption is one selectable payment rail on the review
+// step, backed by whichever provider adapters are actually configured
+// (PLAN.md section 9).
+type CheckoutPaymentMethodOption struct {
+	Value   string // form value posted as payment_method
+	Label   string
+	Checked bool
+}
+
+// CheckoutReviewData backs the final checkout review, payment-method
+// selection, and confirm step.
 type CheckoutReviewData struct {
-	DraftID      int64
-	GigSlug      string
-	GigTitle     string
-	Requirements string
-	Items        []CheckoutLineItem
-	Subtotal     string
-	PlatformFee  string
-	Total        string
-	CSRF         string
+	DraftID        int64
+	GigSlug        string
+	GigTitle       string
+	Requirements   string
+	Items          []CheckoutLineItem
+	Subtotal       string
+	PlatformFee    string
+	Total          string
+	PaymentMethods []CheckoutPaymentMethodOption // empty when no provider is configured
+	CSRF           string
 }
 
 // CheckoutReviewPage renders the checkout review/confirm step.

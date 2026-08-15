@@ -17,11 +17,11 @@ import (
 
 // jobContext bundles dependencies available to every job handler.
 type jobContext struct {
-	Store    *store.Store
-	Log      *slog.Logger
-	Cfg      *config.Config
-	Mailer   services.Mailer
-	Provider providers.Provider // nil when payments are not enabled
+	Store     *store.Store
+	Log       *slog.Logger
+	Cfg       *config.Config
+	Mailer    services.Mailer
+	Providers providers.Registry // empty when payments are not enabled
 }
 
 // jobHandler processes a single claimed job. Returning an error records the
@@ -32,27 +32,27 @@ type jobHandler func(ctx context.Context, jc *jobContext, job store.Job) error
 // pool of goroutines. Claims use FOR UPDATE SKIP LOCKED in the store, so
 // multiple workers can run safely.
 type jobQueue struct {
-	cfg      *config.Config
-	log      *slog.Logger
-	st       *store.Store
-	mailer   services.Mailer
-	provider providers.Provider
-	workerID string
-	handlers map[string]jobHandler
-	slots    chan struct{}
-	wg       sync.WaitGroup
+	cfg       *config.Config
+	log       *slog.Logger
+	st        *store.Store
+	mailer    services.Mailer
+	providers providers.Registry
+	workerID  string
+	handlers  map[string]jobHandler
+	slots     chan struct{}
+	wg        sync.WaitGroup
 }
 
-func newJobQueue(cfg *config.Config, log *slog.Logger, st *store.Store, mailer services.Mailer, provider providers.Provider) *jobQueue {
+func newJobQueue(cfg *config.Config, log *slog.Logger, st *store.Store, mailer services.Mailer, reg providers.Registry) *jobQueue {
 	return &jobQueue{
-		cfg:      cfg,
-		log:      log,
-		st:       st,
-		mailer:   mailer,
-		provider: provider,
-		workerID: fmt.Sprintf("%s-%d", cfg.Hostname(), os.Getpid()),
-		handlers: make(map[string]jobHandler),
-		slots:    make(chan struct{}, cfg.JobConcurrency),
+		cfg:       cfg,
+		log:       log,
+		st:        st,
+		mailer:    mailer,
+		providers: reg,
+		workerID:  fmt.Sprintf("%s-%d", cfg.Hostname(), os.Getpid()),
+		handlers:  make(map[string]jobHandler),
+		slots:     make(chan struct{}, cfg.JobConcurrency),
 	}
 }
 
@@ -63,7 +63,7 @@ func (q *jobQueue) Register(kind string, h jobHandler) {
 
 // Run polls the queue until ctx is cancelled, then drains in-flight jobs.
 func (q *jobQueue) Run(ctx context.Context) error {
-	jc := &jobContext{Store: q.st, Log: q.log, Cfg: q.cfg, Mailer: q.mailer, Provider: q.provider}
+	jc := &jobContext{Store: q.st, Log: q.log, Cfg: q.cfg, Mailer: q.mailer, Providers: q.providers}
 	q.log.Info("job queue started", "worker", q.workerID, "concurrency", q.cfg.JobConcurrency)
 
 	ticker := time.NewTicker(q.cfg.JobPollInterval)

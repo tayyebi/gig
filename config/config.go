@@ -72,10 +72,20 @@ type Config struct {
 	PaymentsEnabled          bool
 	PaymentCurrency          string
 	StripeSecretKey          string
-	StripePublishableKey    string
+	StripePublishableKey     string
 	StripeWebhookSecret      string
 	StripeConnectClientID    string
 	PaymentReconcileInterval time.Duration
+
+	// Payments (BTCPay Server, Phase 6). Like Stripe, credentials are optional
+	// in dev/test; the web role refuses to start with them unset only when
+	// BTCPayURL is set in production (see validate), i.e. once an operator has
+	// opted into Bitcoin/Lightning checkout.
+	BTCPayURL                   string
+	BTCPayAPIKey                string
+	BTCPayStoreID               string
+	BTCPayWebhookSecret         string
+	BTCPayRequiredConfirmations int
 
 	// Jobs
 	JobPollInterval   time.Duration
@@ -200,6 +210,20 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	c.BTCPayURL = strings.TrimRight(env("BTCPAY_URL", ""), "/")
+	c.BTCPayAPIKey = env("BTCPAY_API_KEY", "")
+	c.BTCPayStoreID = env("BTCPAY_STORE_ID", "")
+	c.BTCPayWebhookSecret = env("BTCPAY_WEBHOOK_SECRET", "")
+	// Required confirmations before an invoice's Bitcoin on-chain payment is
+	// treated as fulfillment-ready (PLAN.md section 9's "confirmations before
+	// fulfillment" policy). BTCPay's own "Settled" invoice status already
+	// applies the store's configured confirmation speed policy, so this value
+	// is currently informational/for admin display rather than gating
+	// anything the adapter itself checks.
+	if c.BTCPayRequiredConfirmations, err = envInt("BTCPAY_REQUIRED_CONFIRMATIONS", 1); err != nil {
+		return nil, err
+	}
+
 	if c.JobPollInterval, err = envDuration("JOB_POLL_INTERVAL", time.Second); err != nil {
 		return nil, err
 	}
@@ -268,6 +292,20 @@ func (c *Config) validate() error {
 		if c.StripeWebhookSecret == "" {
 			return errRequired("STRIPE_WEBHOOK_SECRET")
 		}
+	}
+	if c.PaymentsEnabled && c.Environment == EnvProd && c.BTCPayURL != "" {
+		if c.BTCPayAPIKey == "" {
+			return errRequired("BTCPAY_API_KEY")
+		}
+		if c.BTCPayStoreID == "" {
+			return errRequired("BTCPAY_STORE_ID")
+		}
+		if c.BTCPayWebhookSecret == "" {
+			return errRequired("BTCPAY_WEBHOOK_SECRET")
+		}
+	}
+	if c.BTCPayRequiredConfirmations < 0 {
+		return fmt.Errorf("BTCPAY_REQUIRED_CONFIRMATIONS cannot be negative")
 	}
 	return nil
 }
