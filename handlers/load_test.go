@@ -75,7 +75,7 @@ func TestConcurrentLoadSearchGigDetailAndOrderDetail(t *testing.T) {
 		t.Fatalf("TransitionOrder to in_progress: %v", err)
 	}
 	for i := 0; i < 3; i++ {
-		if _, err := a.srv.Store.CreateOrderMessage(ctx, order.ID, sellerID, fmt.Sprintf("Update %d on your order.", i)); err != nil {
+		if _, err := a.srv.Store.CreateOrderMessage(ctx, order.ID, sellerID, fmt.Sprintf("Update %d on your order.", i), false); err != nil {
 			t.Fatalf("CreateOrderMessage: %v", err)
 		}
 	}

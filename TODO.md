@@ -173,7 +173,7 @@ exists for each one rather than an open question.
 ### Messaging and notifications
 
 - [x] Implement order-bound `OrderMessage` threading
-- [ ] Implement seller requests for buyer information (no dedicated "request info" UI; a seller can ask through the regular order-message thread today)
+- [x] Implement seller requests for buyer information — a seller can flag any order message as an explicit info request (`order_messages.is_info_request`, a `request_info` checkbox on the seller's message form in `orderdetail.tmpl`), which renders with a distinct "Info requested" badge and fires a dedicated `order.info_requested` notification instead of the generic `order.message` one; covered end-to-end in `handlers/e2e_journey_test.go`
 - [x] Implement `Notification` creation and unread count
 - [x] Implement notification list pages for buyers and sellers
 - [x] Implement transactional email dispatch via job queue

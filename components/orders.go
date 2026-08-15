@@ -34,10 +34,11 @@ type TimelineEntry struct {
 
 // OrderMessageView is one displayable order-thread message.
 type OrderMessageView struct {
-	SenderName string
-	Body       string
-	CreatedAt  string
-	Mine       bool
+	SenderName    string
+	Body          string
+	CreatedAt     string
+	Mine          bool
+	IsInfoRequest bool
 }
 
 // AttachmentView is a displayable, privately-served order file.

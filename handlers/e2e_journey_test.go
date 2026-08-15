@@ -196,6 +196,19 @@ func TestBuyerSellerJourneyEndToEnd(t *testing.T) {
 	csrf = a.csrf(t, "/login")
 	a.req(t, http.MethodPost, "/login", "email=journey-seller@example.com&password=password123&_csrf="+csrf)
 
+	// A seller-flagged "request info" message (TODO.md Phase 4's "seller
+	// requests for buyer information") renders with a distinct badge.
+	csrf = a.csrf(t, orderLocation)
+	rec = a.req(t, http.MethodPost, "/orders/"+orderIDStr+"/messages",
+		"message_body=Which+font+family+do+you+prefer%3F&request_info=1&_csrf="+csrf)
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("seller info request = %d, body=%s", rec.Code, rec.Body.String())
+	}
+	rec = a.req(t, http.MethodGet, orderLocation, "")
+	if !strings.Contains(rec.Body.String(), "Info requested") {
+		t.Fatalf("info-request badge not rendered: %s", rec.Body.String())
+	}
+
 	csrf = a.csrf(t, orderLocation)
 	rec = a.multipartReq(t, "/orders/"+orderIDStr+"/deliver", map[string]string{
 		"delivery_message": "Here is the first draft.",

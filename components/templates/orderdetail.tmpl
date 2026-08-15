@@ -120,7 +120,7 @@
   {{if .Messages}}
   <ul>
     {{range .Messages}}
-    <li><strong>{{if .Mine}}You{{else}}{{.SenderName}}{{end}}</strong> ({{.CreatedAt}}): {{.Body}}</li>
+    <li>{{if .IsInfoRequest}}<strong class="badge">Info requested</strong> {{end}}<strong>{{if .Mine}}You{{else}}{{.SenderName}}{{end}}</strong> ({{.CreatedAt}}): {{.Body}}</li>
     {{end}}
   </ul>
   {{else}}
@@ -133,6 +133,14 @@
       <label for="{{fieldid "message_body"}}">Send a message</label>
       <textarea id="{{fieldid "message_body"}}" name="message_body" required></textarea>
     </div>
+    {{if .IsSeller}}
+    <div class="field">
+      <label for="{{fieldid "request_info"}}">
+        <input id="{{fieldid "request_info"}}" name="request_info" type="checkbox" value="1">
+        Flag this as a request for information from the buyer
+      </label>
+    </div>
+    {{end}}
     <button class="btn" type="submit">Send</button>
   </form>
   {{end}}

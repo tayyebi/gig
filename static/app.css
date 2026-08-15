@@ -237,6 +237,16 @@ input[type="file"] {
   margin-block-start: var(--space-1);
 }
 
+.badge {
+  display: inline-block;
+  background: var(--color-info-bg);
+  color: var(--color-primary-dark);
+  border-radius: var(--radius-sm);
+  padding: 0 var(--space-1);
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
 .search-row {
   display: flex;
   gap: var(--space-2);

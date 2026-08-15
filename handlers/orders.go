@@ -214,6 +214,7 @@ func (s *Server) buildOrderDetail(ctx context.Context, access *orderAccess, view
 	for _, m := range messages {
 		messageViews = append(messageViews, components.OrderMessageView{
 			SenderName: m.SenderName, Body: m.Body, CreatedAt: formatTime(m.CreatedAt), Mine: m.SenderID == viewerID,
+			IsInfoRequest: m.IsInfoRequest,
 		})
 	}
 
@@ -392,16 +393,24 @@ func (s *Server) orderMessageCreate(w http.ResponseWriter, r *http.Request) {
 	if len(body) > maxOrderMessageLen {
 		body = body[:maxOrderMessageLen]
 	}
+	// Only a seller can flag a message as an info request — it's a
+	// deliberate "I need this from you to proceed" signal on top of the
+	// regular chat thread, not something a buyer sends to themselves.
+	isInfoRequest := access.IsSeller && r.FormValue("request_info") != ""
 	u := s.userFrom(r)
-	if _, err := s.Store.CreateOrderMessage(r.Context(), access.Order.ID, u.ID, body); err != nil {
+	if _, err := s.Store.CreateOrderMessage(r.Context(), access.Order.ID, u.ID, body, isInfoRequest); err != nil {
 		s.renderError(w, err)
 		return
 	}
 	recipient := access.Order.SellerID
+	notifyKind, notifyText := "order.message", fmt.Sprintf("New message on order #%d", access.Order.ID)
 	if access.IsSeller {
 		recipient = access.Order.BuyerID
+		if isInfoRequest {
+			notifyKind, notifyText = "order.info_requested", fmt.Sprintf("The seller needs information from you on order #%d", access.Order.ID)
+		}
 	}
-	s.notify(r.Context(), recipient, "order.message", fmt.Sprintf("New message on order #%d", access.Order.ID), orderRedirect(access.Order.ID))
+	s.notify(r.Context(), recipient, notifyKind, notifyText, orderRedirect(access.Order.ID))
 	http.Redirect(w, r, orderRedirect(access.Order.ID), http.StatusSeeOther)
 }
 

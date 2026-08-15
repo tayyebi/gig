@@ -18,21 +18,22 @@ const (
 
 // OrderMessage is one entry in an order's buyer/seller conversation.
 type OrderMessage struct {
-	ID         int64
-	OrderID    int64
-	SenderID   int64
-	SenderName string
-	Body       string
-	CreatedAt  time.Time
+	ID            int64
+	OrderID       int64
+	SenderID      int64
+	SenderName    string
+	Body          string
+	IsInfoRequest bool // seller explicitly asked the buyer for something, not just a general chat message
+	CreatedAt     time.Time
 }
 
 // CreateOrderMessage appends a message to an order's thread.
-func (s *Store) CreateOrderMessage(ctx context.Context, orderID, senderID int64, body string) (*OrderMessage, error) {
-	m := OrderMessage{OrderID: orderID, SenderID: senderID, Body: body}
+func (s *Store) CreateOrderMessage(ctx context.Context, orderID, senderID int64, body string, isInfoRequest bool) (*OrderMessage, error) {
+	m := OrderMessage{OrderID: orderID, SenderID: senderID, Body: body, IsInfoRequest: isInfoRequest}
 	if err := s.db.QueryRowContext(ctx, `
-		INSERT INTO order_messages (order_id, sender_id, body) VALUES ($1, $2, $3)
+		INSERT INTO order_messages (order_id, sender_id, body, is_info_request) VALUES ($1, $2, $3, $4)
 		RETURNING id, created_at`,
-		orderID, senderID, body,
+		orderID, senderID, body, isInfoRequest,
 	).Scan(&m.ID, &m.CreatedAt); err != nil {
 		return nil, fmt.Errorf("create order message: %w", err)
 	}
@@ -42,7 +43,7 @@ func (s *Store) CreateOrderMessage(ctx context.Context, orderID, senderID int64,
 // ListOrderMessages returns an order's full conversation, oldest first.
 func (s *Store) ListOrderMessages(ctx context.Context, orderID int64) ([]OrderMessage, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT om.id, om.order_id, om.sender_id, u.name, om.body, om.created_at
+		SELECT om.id, om.order_id, om.sender_id, u.name, om.body, om.is_info_request, om.created_at
 		FROM order_messages om
 		JOIN users u ON u.id = om.sender_id
 		WHERE om.order_id = $1
@@ -55,7 +56,7 @@ func (s *Store) ListOrderMessages(ctx context.Context, orderID int64) ([]OrderMe
 	var out []OrderMessage
 	for rows.Next() {
 		var m OrderMessage
-		if err := rows.Scan(&m.ID, &m.OrderID, &m.SenderID, &m.SenderName, &m.Body, &m.CreatedAt); err != nil {
+		if err := rows.Scan(&m.ID, &m.OrderID, &m.SenderID, &m.SenderName, &m.Body, &m.IsInfoRequest, &m.CreatedAt); err != nil {
 			return nil, fmt.Errorf("scan order message: %w", err)
 		}
 		out = append(out, m)
