@@ -4,22 +4,29 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 
 ## Phase 0: Product, Legal, and Provider Decisions
 
-- [ ] Select operating country and initial seller countries
-- [ ] Confirm marketplace business model and fee model
-- [ ] Confirm currencies and tax responsibilities
-- [ ] Confirm seller-of-record responsibilities
-- [ ] Confirm Stripe Connect availability and account type (Express vs Custom)
-- [ ] Provision a BTCPay Server test environment
-- [ ] Select stablecoin network (Base or Polygon)
-- [ ] Select settlement asset and indexer/provider
-- [ ] Select crypto custody model and emergency-pause plan
-- [ ] Define refund policy
-- [ ] Define escrow-like hold and auto-accept policy
-- [ ] Define dispute policy
-- [ ] Define payout policy
-- [ ] Produce threat model
-- [ ] Produce data classification and compliance checklist
-- [ ] Produce consent, retention, and privacy policy draft `(ops)`
+Every "Select/Confirm/Define" item below has a proposed default drafted in
+`docs/phase0-decisions.md`, consistent with what the codebase already
+implements. They stay unchecked here because they are business/legal
+decisions that need a human owner's sign-off, not something an engineering
+pass can mark done on its own — but a concrete, actionable proposal now
+exists for each one rather than an open question.
+
+- [ ] Select operating country and initial seller countries — proposed: `docs/phase0-decisions.md`
+- [ ] Confirm marketplace business model and fee model — proposed: `docs/phase0-decisions.md`
+- [ ] Confirm currencies and tax responsibilities — proposed: `docs/phase0-decisions.md`
+- [ ] Confirm seller-of-record responsibilities — proposed: `docs/phase0-decisions.md`
+- [ ] Confirm Stripe Connect availability and account type (Express vs Custom) — proposed: Express, already the implemented default; see `docs/phase0-decisions.md`
+- [ ] Provision a BTCPay Server test environment `(ops — real infrastructure, not code)`
+- [ ] Select stablecoin network (Base or Polygon) — resolved in code as "both, config-selected" (`providers/evm.go`); see `docs/phase0-decisions.md` to formally confirm
+- [ ] Select settlement asset and indexer/provider — implemented as USDC + USDT via direct RPC, no third-party indexer; see `docs/phase0-decisions.md`
+- [ ] Select crypto custody model and emergency-pause plan — implemented as "no platform custody, manual treasury execution"; see `docs/runbooks/treasury-custody.md` and `docs/phase0-decisions.md`
+- [ ] Define refund policy — proposed: `docs/phase0-decisions.md`, operational detail in `docs/runbooks/refund.md`
+- [ ] Define escrow-like hold and auto-accept policy — proposed: `docs/phase0-decisions.md` (confirms the existing `AutoAcceptPeriod` default)
+- [ ] Define dispute policy — proposed: `docs/phase0-decisions.md`
+- [ ] Define payout policy — proposed: `docs/phase0-decisions.md`, operational detail in `docs/runbooks/payout.md`
+- [x] Produce threat model — `docs/threat-model.md`
+- [x] Produce data classification and compliance checklist — `docs/data-classification.md`
+- [x] Produce consent, retention, and privacy policy draft `(ops)` — `docs/privacy-policy-draft.md` (explicitly not publishable without legal review)
 
 ## Phase 1: Foundation
 
@@ -258,7 +265,7 @@ Network choice (Phase 0's Base-vs-Polygon gate) was resolved for this pass as "b
 - [x] Implement manual review threshold for high-value payouts — `needs_manual_review` status, admin-approved via `/admin/payouts/{id}/approve`
 - [x] Implement admin emergency pause — `platform_settings.payouts_paused`, `/admin/payouts/pause`
 - [x] Ensure payouts never use raw client-provided addresses — payouts reference `wallet_id`; the address is only ever decrypted from the stored, confirmed row
-- [ ] Design ops runbook for gas funding, treasury, key custody `(ops)`
+- [x] Design ops runbook for gas funding, treasury, key custody `(ops)` — `docs/runbooks/treasury-custody.md`
 
 Explicitly out of scope for this pass (flagged rather than silently stubbed): actual on-chain broadcast of refunds and payouts. Both require a treasury signing key, which is outside this project's key-custody scope; the queue reaches `ready_for_manual_execution`/`processing` and an admin executes the transfer manually, recording the tx hash for audit (`/admin/payouts/{id}/complete`).
 
@@ -294,8 +301,8 @@ Explicitly out of scope for this pass (flagged rather than silently stubbed): ac
 - [x] Test concurrent migration startup under advisory lock contention — already existed pre-Phase 8, `store/migrate_test.go` `TestMigrateUnderContention`
 - [ ] Run load tests on search, checkout, and messaging
 - [ ] Verify mobile performance and page weight budgets
-- [ ] Exercise backup and restore procedures `(ops)`
-- [ ] Exercise disaster-recovery runbook `(ops)`
+- [ ] Exercise backup and restore procedures `(ops)` — procedure drafted at `docs/runbooks/backup-restore.md`; actually running it needs a real deployment, which this repository doesn't provision on its own
+- [ ] Exercise disaster-recovery runbook `(ops)` — drafted at `docs/runbooks/disaster-recovery.md`; same caveat as above
 
 ### Accessibility and zero-JS verification
 
@@ -314,7 +321,7 @@ Explicitly out of scope for this pass (flagged rather than silently stubbed): ac
 - [ ] Complete tax and chargeback process review
 - [ ] Complete crypto-custody and treasury review
 - [ ] Run provider sandbox certification and end-to-end payment drills
-- [ ] Produce production runbooks (incident, payout, refund, reconciliation)
+- [x] Produce production runbooks (incident, payout, refund, reconciliation) — `docs/runbooks/{incident,payout,refund,reconciliation}.md`
 - [ ] Obtain legal/compliance sign-off
 
 ## Phase 9: Controlled Launch `(ops)`
