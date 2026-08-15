@@ -104,6 +104,35 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /admin/payouts/pause", s.requireRole(store.RoleAdmin, s.adminPayoutsPause))
 	mux.HandleFunc("POST /admin/payouts/{id}/approve", s.requireRole(store.RoleAdmin, s.adminPayoutApprove))
 	mux.HandleFunc("POST /admin/payouts/{id}/complete", s.requireRole(store.RoleAdmin, s.adminPayoutComplete))
+	mux.HandleFunc("GET /admin/payments/search", s.requireRole(store.RoleAdmin, s.adminPaymentSearch))
+	mux.HandleFunc("GET /admin/orders/{id}/timeline", s.requireRole(store.RoleAdmin, s.adminOrderTimeline))
+	mux.HandleFunc("POST /admin/jobs/{id}/retry", s.requireRole(store.RoleAdmin, s.adminJobRetry))
+
+	// Admin: user, gig, media, review, and message moderation.
+	mux.HandleFunc("GET /admin/users", s.requireRole(store.RoleAdmin, s.adminUsers))
+	mux.HandleFunc("POST /admin/users/{id}/status", s.requireRole(store.RoleAdmin, s.adminUserStatus))
+	mux.HandleFunc("GET /admin/users/export.csv", s.requireRole(store.RoleAdmin, s.adminUsersExport))
+	mux.HandleFunc("GET /admin/moderation/gigs", s.requireRole(store.RoleAdmin, s.adminModerationGigs))
+	mux.HandleFunc("POST /admin/moderation/gigs/{id}", s.requireRole(store.RoleAdmin, s.adminModerationGigDecide))
+	mux.HandleFunc("GET /admin/moderation/media", s.requireRole(store.RoleAdmin, s.adminModerationMedia))
+	mux.HandleFunc("POST /admin/moderation/media/{id}", s.requireRole(store.RoleAdmin, s.adminModerationMediaDecide))
+	mux.HandleFunc("GET /admin/moderation/reviews", s.requireRole(store.RoleAdmin, s.adminModerationReviews))
+	mux.HandleFunc("POST /admin/moderation/reviews/{id}", s.requireRole(store.RoleAdmin, s.adminModerationReviewDecide))
+	mux.HandleFunc("GET /admin/moderation/messages", s.requireRole(store.RoleAdmin, s.adminModerationMessages))
+	mux.HandleFunc("POST /admin/moderation/messages/{id}/hide", s.requireRole(store.RoleAdmin, s.adminModerationMessageHide))
+
+	// Admin: dispute resolution console.
+	mux.HandleFunc("GET /admin/disputes", s.requireRole(store.RoleAdmin, s.adminDisputes))
+	mux.HandleFunc("GET /admin/disputes/{id}", s.requireRole(store.RoleAdmin, s.adminDisputeDetail))
+	mux.HandleFunc("POST /admin/disputes/{id}/notes", s.requireRole(store.RoleAdmin, s.adminDisputeNotes))
+
+	// Admin: settings, audit log, and ledger adjustments.
+	mux.HandleFunc("GET /admin/settings", s.requireRole(store.RoleAdmin, s.adminSettings))
+	mux.HandleFunc("POST /admin/settings", s.requireRole(store.RoleAdmin, s.adminSettingsUpdate))
+	mux.HandleFunc("GET /admin/audit", s.requireRole(store.RoleAdmin, s.adminAuditLog))
+	mux.HandleFunc("GET /admin/audit/export.csv", s.requireRole(store.RoleAdmin, s.adminAuditExport))
+	mux.HandleFunc("GET /admin/ledger/adjust", s.requireRole(store.RoleAdmin, s.adminLedgerAdjustForm))
+	mux.HandleFunc("POST /admin/ledger/adjust", s.requireRole(store.RoleAdmin, s.adminLedgerAdjust))
 
 	// Public catalog.
 	mux.HandleFunc("GET /browse", s.browseCategories)

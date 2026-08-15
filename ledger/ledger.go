@@ -86,6 +86,14 @@ func RefundIssued(orderID, sellerID int64, amountMinor, feeRefundMinor, payableR
 	if feeRefundMinor+payableRefundMinor != amountMinor {
 		return nil, fmt.Errorf("fee refund %d + payable refund %d must equal amount %d", feeRefundMinor, payableRefundMinor, amountMinor)
 	}
+	// The refunds account is a pass-through used for audit visibility: it is
+	// debited once (money "issued" as a refund) and credited once (the same
+	// amount, sourced from the fee/payable shares being clawed back), so it
+	// nets to zero within this transaction group while still appearing in
+	// any ledger listing filtered to it. The actual two economically real
+	// legs are: platform revenue and the seller's payable shrink by their
+	// original shares (debit), and the provider clearing account regains
+	// that amount (credit) — the exact reverse of PaymentCaptured.
 	entries := []Entry{
 		{AccountKind: AccountRefunds, Direction: DirectionDebit, AmountMinor: amountMinor, Currency: currency, OrderID: &orderID, Description: "refund issued"},
 		{AccountKind: AccountProviderClearing, Direction: DirectionCredit, AmountMinor: amountMinor, Currency: currency, OrderID: &orderID, Description: "refund routed to buyer"},
@@ -99,6 +107,28 @@ func RefundIssued(orderID, sellerID int64, amountMinor, feeRefundMinor, payableR
 			sellerAccount = AccountSellerAvailable
 		}
 		entries = append(entries, Entry{AccountKind: sellerAccount, OwnerID: &sellerID, Direction: DirectionDebit, AmountMinor: payableRefundMinor, Currency: currency, OrderID: &orderID, Description: "seller payable refunded"})
+	}
+	entries = append(entries, Entry{AccountKind: AccountRefunds, Direction: DirectionCredit, AmountMinor: feeRefundMinor + payableRefundMinor, Currency: currency, OrderID: &orderID, Description: "refund funded from fee/payable shares"})
+	return entries, Validate(entries)
+}
+
+// ManualAdjustment builds a balanced two-entry posting moving funds between
+// any two ledger accounts, for the admin's audited free-form adjustment
+// tool (PLAN.md section 12: "manual adjustments only through audited,
+// permissioned actions that require a reason"). orderID is optional context
+// for the timeline view; reason becomes the entry description on both legs
+// so it is visible in any balance or transaction listing.
+func ManualAdjustment(fromKind string, fromOwner *int64, toKind string, toOwner *int64, amountMinor int64, currency string, orderID *int64, reason string) ([]Entry, error) {
+	if amountMinor <= 0 {
+		return nil, fmt.Errorf("adjustment amount must be positive, got %d", amountMinor)
+	}
+	if reason == "" {
+		return nil, fmt.Errorf("adjustment reason is required")
+	}
+	desc := "manual adjustment: " + reason
+	entries := []Entry{
+		{AccountKind: fromKind, OwnerID: fromOwner, Direction: DirectionDebit, AmountMinor: amountMinor, Currency: currency, OrderID: orderID, Description: desc},
+		{AccountKind: toKind, OwnerID: toOwner, Direction: DirectionCredit, AmountMinor: amountMinor, Currency: currency, OrderID: orderID, Description: desc},
 	}
 	return entries, Validate(entries)
 }

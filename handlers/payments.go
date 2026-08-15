@@ -407,7 +407,7 @@ func (s *Server) BTCPayWebhook(w http.ResponseWriter, r *http.Request) {
 func (s *Server) receiveWebhookEvent(w http.ResponseWriter, r *http.Request, body []byte, evt providers.VerifiedEvent) {
 	sum := sha256.Sum256(body)
 	hash := hex.EncodeToString(sum[:])
-	_, inserted, err := s.Store.InsertWebhookEvent(r.Context(), evt.Provider, evt.EventID, evt.EventType, body, hash)
+	_, inserted, err := s.Store.InsertWebhookEvent(r.Context(), evt.Provider, evt.EventID, evt.EventType, evt.ProviderRef, body, hash)
 	if err != nil {
 		s.Log.Error("insert webhook event", "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -459,14 +459,16 @@ func (s *Server) adminPayments(w http.ResponseWriter, r *http.Request) {
 		sb.WriteString("<p>No dead-lettered webhook jobs.</p>")
 	} else {
 		sb.WriteString("<p>These webhook events exhausted their retries and were never applied; they need manual review.</p>")
-		sb.WriteString("<table><thead><tr><th scope=\"col\">Job ID</th><th scope=\"col\">Attempts</th><th scope=\"col\">Last error</th><th scope=\"col\">Updated</th></tr></thead><tbody>")
+		sb.WriteString("<table><thead><tr><th scope=\"col\">Job ID</th><th scope=\"col\">Attempts</th><th scope=\"col\">Last error</th><th scope=\"col\">Updated</th><th scope=\"col\">Action</th></tr></thead><tbody>")
 		for _, j := range deadJobs {
 			lastError := ""
 			if j.LastError != nil {
 				lastError = *j.LastError
 			}
-			sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td>%d/%d</td><td>%s</td><td>%s</td></tr>",
-				j.ID, j.Attempts, j.MaxAttempts, html.EscapeString(lastError), html.EscapeString(j.UpdatedAt.Format("2006-01-02 15:04"))))
+			sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td>%d/%d</td><td>%s</td><td>%s</td><td>", j.ID, j.Attempts, j.MaxAttempts,
+				html.EscapeString(lastError), html.EscapeString(j.UpdatedAt.Format("2006-01-02 15:04"))))
+			sb.WriteString(fmt.Sprintf(`<form method="post" action="/admin/jobs/%d/retry" novalidate>%s<button class="btn" type="submit">Retry</button></form>`, j.ID, csrfInputHTML(s.csrfFor(r))))
+			sb.WriteString("</td></tr>")
 		}
 		sb.WriteString("</tbody></table>")
 	}

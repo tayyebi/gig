@@ -248,12 +248,12 @@ func (s *Store) ListPaymentAttemptsForIntent(ctx context.Context, intentID int64
 // InsertWebhookEvent records a verified provider webhook event, deduplicated
 // by (provider, event_id). It returns inserted=false without error when the
 // event has already been seen, so the caller can ack idempotently.
-func (s *Store) InsertWebhookEvent(ctx context.Context, provider, eventID, eventType string, payload []byte, payloadHash string) (id int64, inserted bool, err error) {
+func (s *Store) InsertWebhookEvent(ctx context.Context, provider, eventID, eventType, providerRef string, payload []byte, payloadHash string) (id int64, inserted bool, err error) {
 	err = s.db.QueryRowContext(ctx, `
-		INSERT INTO payment_webhook_events (provider, event_id, event_type, payload, payload_hash)
-		VALUES ($1, $2, $3, $4, $5)
+		INSERT INTO payment_webhook_events (provider, event_id, event_type, provider_ref, payload, payload_hash)
+		VALUES ($1, $2, $3, $4, $5, $6)
 		ON CONFLICT (provider, event_id) DO NOTHING
-		RETURNING id`, provider, eventID, eventType, payload, payloadHash).Scan(&id)
+		RETURNING id`, provider, eventID, eventType, providerRef, payload, payloadHash).Scan(&id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return 0, false, nil
 	}

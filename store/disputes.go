@@ -27,6 +27,10 @@ type Dispute struct {
 	ResolvedBy *int64
 	ResolvedAt *time.Time
 	CreatedAt  time.Time
+	// InternalNotes is admin-only free text, never shown to the buyer or
+	// seller, distinct from Decision which is the buyer/seller-visible
+	// resolution rationale.
+	InternalNotes string
 }
 
 // CreateDispute opens a dispute on an order.

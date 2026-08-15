@@ -207,14 +207,14 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 - [x] Add ledger balance validation test
 - [x] Implement reconciliation job against Stripe records — `payment.reconcile_sweep` re-checks stale intents directly against the provider
 - [x] Make reconciliation exceptions visible in admin console — dead-lettered `payment.webhook_process` jobs are listed on `/admin/payments`
-- [ ] Implement audited, permissioned manual adjustments with reason — refunds are audited; there is no separate free-form ledger adjustment tool
+- [x] Implement audited, permissioned manual adjustments with reason — `/admin/ledger/adjust` (`GET`/`POST`), `ledger.ManualAdjustment` builds a balanced two-leg posting between any two account kinds, audited as `ledger.manual_adjustment` with the transaction group ID; also fixed a pre-existing bug in `ledger.RefundIssued` (its entries did not balance — `TestRefundIssuedBalances` was failing on `main` before this pass)
 
 ### Admin payment tooling
 
-- [ ] Build admin search by payment ID and provider reference — only a fixed per-order lookup (`/admin/orders/{id}/payments`) exists, not a search form
-- [ ] Build order and payment timeline view — shows the latest intent only, not the full attempt/webhook history
-- [ ] Implement safe webhook retry tool — dead-lettered jobs are now visible on `/admin/payments`, but there is no retry button yet
-- [ ] Build payout queue and failed-payout views (payouts are out of scope until Phase 7)
+- [x] Build admin search by payment ID and provider reference — `/admin/payments/search`, `store.SearchPaymentIntents` matches numeric intent/order ID or a substring of provider_ref/charge_ref
+- [x] Build order and payment timeline view — `/admin/orders/{id}/timeline` shows every `payment_attempts` row and every matched `payment_webhook_events` row for the order's latest intent, not just the current status; required adding a `provider_ref` column to `payment_webhook_events` (0010 migration) so events join to intents directly instead of parsing provider-shaped JSON payloads
+- [x] Implement safe webhook retry tool — dead-lettered jobs on `/admin/payments` now have a "Retry" button (`POST /admin/jobs/{id}/retry`, `store.RetryJob` resets status/attempts so a worker re-claims it)
+- [x] Build payout queue and failed-payout views — pre-existing `/admin/payouts` from Phase 7 covers this; not rebuilt
 
 ## Phase 6: Bitcoin and Lightning (BTCPay)
 
@@ -230,7 +230,7 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 - [x] Implement refund handling for BTCPay — `Refund` creates a pull payment (BTCPay refunds are buyer-claimed, not instant, so status is always `processing` until reconciled)
 - [x] Define confirmations-before-fulfillment policy in config — `config.BTCPayRequiredConfirmations`
 - [x] Add reconciliation job scanning BTCPay for missed webhooks — reuses the existing provider-agnostic stale-intent sweep, now dispatched per-provider via `providers.Registry`
-- [x] Add admin visibility for BTCPay invoices — `handlers/payments.go` `adminOrderPayments`/`renderOnChainPaymentDetail` adds a live provider re-check plus `payment_attempts` status history (`store.ListPaymentAttemptsForIntent`) below the generic view when `intent.Provider == "btcpay"`
+- [x] Add admin visibility for BTCPay invoices — `handlers/payments.go` `adminOrderPayments`/`renderOnChainPaymentDetail` adds a live provider re-check plus `payment_attempts` status history (`store.ListPaymentAttemptsForIntent`) below the generic view when `intent.Provider == "btcpay"`; also covered provider-agnostically by the Phase 8 `/admin/payments/search` and `/admin/orders/{id}/timeline` consoles
 
 ## Phase 7: Stablecoin Payments and Wallet Payouts
 
@@ -247,7 +247,7 @@ Network choice (Phase 0's Base-vs-Polygon gate) was resolved for this pass as "b
 - [x] Implement reorg-safe confirmation handling — `EVMRequiredConfirmations` gates `succeeded` status
 - [x] Implement reconciliation job scanning indexer for missed webhooks — reuses the existing provider-agnostic `payment.reconcile_sweep`, no new job needed since EVM has no inbound webhooks by design
 - [x] Implement refund policy for stablecoin payments — admin-queued/manual, same "processing until reconciled" precedent as BTCPay refunds (no treasury signing key in scope)
-- [x] Add admin visibility for on-chain payments — same `renderOnChainPaymentDetail` addition as BTCPay above, triggered for `evm-*` providers; since EVM has no inbound webhooks, its most useful field is the live provider re-check (tx hash via `ChargeRef`, confirmation-derived status), not attempt history, which stays empty for this provider today
+- [x] Add admin visibility for on-chain payments — same `renderOnChainPaymentDetail` addition as BTCPay above, triggered for `evm-*` providers; since EVM has no inbound webhooks, its most useful field is the live provider re-check (tx hash via `ChargeRef`, confirmation-derived status), not attempt history, which stays empty for this provider today; also covered provider-agnostically by the Phase 8 `/admin/payments/search` and `/admin/orders/{id}/timeline` consoles
 
 ### Wallet payouts
 
@@ -266,11 +266,11 @@ Explicitly out of scope for this pass (flagged rather than silently stubbed): ac
 
 ### Admin consoles
 
-- [ ] Complete moderation dashboards (users, gigs, media, reviews, messages)
-- [ ] Complete dispute resolution console with evidence and internal notes
-- [ ] Complete payout and reconciliation dashboards
-- [ ] Implement CSV report exports with sensitive-field access controls
-- [ ] Implement settings, fees, networks, and feature-flag management
+- [x] Complete moderation dashboards (users, gigs, media, reviews, messages) — `handlers/admin.go`: `/admin/users` (search/filter + suspend/restore with a required reason), `/admin/moderation/gigs`, `/admin/moderation/media`, `/admin/moderation/reviews` (approve/reject queues filterable by state), `/admin/moderation/messages` (hide, filterable by order); every decision is audit-logged and CSRF-protected
+- [x] Complete dispute resolution console with evidence and internal notes — `/admin/disputes` (open/resolved lists) and `/admin/disputes/{id}` (evidence attachment links, an admin-only internal-notes form separate from the buyer/seller-visible decision, and the existing resolve action)
+- [x] Complete payout and reconciliation dashboards — pre-existing `/admin/payouts` and `/admin/payments` from Phase 5/7 extended in this pass with a "Retry" button on dead-lettered jobs; not otherwise rebuilt
+- [x] Implement CSV report exports with sensitive-field access controls — `/admin/users/export.csv` and `/admin/audit/export.csv`, admin-role-gated (like every `/admin/*` route) and each export itself writes an `admin.export_csv` audit entry with the row count
+- [x] Implement settings, fees, networks, and feature-flag management — `/admin/settings` lists/edits every `platform_settings` row (generic key/value; seeded with `platform_fee_bps` and `feature_stablecoin_payouts` alongside the existing `payouts_paused`) and supports adding new keys; every change is audited
 
 ### Fraud and security
 
