@@ -298,13 +298,13 @@ Explicitly out of scope for this pass (flagged rather than silently stubbed): ac
 
 ### Accessibility and zero-JS verification
 
-- [ ] Audit keyboard navigation, focus order, labels, and contrast
-- [ ] Audit screen-reader structure of all major pages
-- [ ] Run every journey with JavaScript disabled in the browser
-- [ ] Verify no shipped page contains `<script>`, inline handlers, or third-party widgets
-- [ ] Verify `<html lang dir>` from server-side locale configuration
-- [ ] Verify semantic element usage and minimal id/class selectors
-- [ ] Verify auto-refresh status pages use `<meta http-equiv="refresh">`
+- [ ] Audit keyboard navigation, focus order, labels, and contrast — no automated tool wired up (would need a real browser, e.g. axe-core via a headless driver, which the project has deliberately avoided pulling in); a spot check of `components/templates/*.tmpl` found every form template already uses `<label for>`, and the dashboards/detail pages that lack `<label>` are non-form pages where that's expected
+- [ ] Audit screen-reader structure of all major pages — not automated; PLAN.md's semantic-element guidance (header/nav/main/article/section/table/dl) is already followed throughout `components/templates/`, but this needs a real screen reader pass, not just a grep
+- [ ] Run every journey with JavaScript disabled in the browser — not exercised (would need the browser-level e2e tooling PLAN.md section 18 scopes for dev-only use, not set up in this pass); partially covered in spirit by the two tests below, which make "no JS shipped" true by construction rather than by manual spot-check
+- [x] Verify no shipped page contains `<script>`, inline handlers, or third-party widgets — `components/zerojs_test.go`: `TestNoScriptTagsOrInlineHandlersInTemplates` walks every `.tmpl` file, `TestNoScriptTagsInHandlerSource` walks every `handlers/*.go` source file (the admin console renders raw HTML string literals, not `.tmpl` fragments, so needed its own check), both failing the build on `<script>`, `javascript:`, `<iframe>`, or an `on*=` inline handler attribute; runs on every `go test ./...`, not just as a one-off manual pass
+- [x] Verify `<html lang dir>` from server-side locale configuration — `components/zerojs_test.go` `TestLayoutRendersLangDirAndNoScript` renders the real layout and asserts `<html lang="en" dir="ltr">`
+- [ ] Verify semantic element usage and minimal id/class selectors — not automated (a generic "minimal class usage" check has too many reasonable exceptions to encode as a hard rule without frequent false positives); manual review of `components/templates/*.tmpl` shows consistent use of `header`/`nav`/`main`/`section`/`table`/`dl`/`form`/`fieldset`
+- [x] Verify auto-refresh status pages use `<meta http-equiv="refresh">` — `components/zerojs_test.go` `TestMetaRefreshOnlyWhenRequested` confirms the layout only ever emits the refresh meta tag when `PageData.MetaRefresh` is explicitly set (never by default), and the two pages that need it (`handlers/payments.go` `btcpayInvoiceStatus`, `evmDepositStatus`) already set it, per the existing Phase 6/7 pattern
 
 ### Compliance and sign-off `(ops)`
 
