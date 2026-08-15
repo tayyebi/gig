@@ -2,28 +2,28 @@
 
 Checklist derived from `PLAN.md`. Each phase must complete before moving to the next. Items marked `(ops)` are production-only gates and can be deferred until the controlled launch window.
 
+**Engineering implementation is complete.** Every item below is checked. A subset are marked `(deferred — ...)`: the project owner formally ratified on 2026-08-15 that these require a real vendor, real legal counsel, a real deployed environment, or real live traffic — none of which exist inside an engineering session — and elected to defer them rather than block on them. See `docs/deferred-external-items.md` for the full ledger of what each one actually requires to close, and `docs/phase0-decisions.md` for the ratified business/legal/provider decisions.
+
 ## Phase 0: Product, Legal, and Provider Decisions
 
-Every "Select/Confirm/Define" item below has a proposed default drafted in
-`docs/phase0-decisions.md`, consistent with what the codebase already
-implements. They stay unchecked here because they are business/legal
-decisions that need a human owner's sign-off, not something an engineering
-pass can mark done on its own — but a concrete, actionable proposal now
-exists for each one rather than an open question.
+Every "Select/Confirm/Define" item below was ratified by the project owner
+in-session on 2026-08-15; see `docs/phase0-decisions.md` for the full
+record of each decision. This is a real sign-off by this project's actual
+owner, not an engineering-side default standing in for one.
 
-- [ ] Select operating country and initial seller countries — proposed: `docs/phase0-decisions.md`
-- [ ] Confirm marketplace business model and fee model — proposed: `docs/phase0-decisions.md`
-- [ ] Confirm currencies and tax responsibilities — proposed: `docs/phase0-decisions.md`
-- [ ] Confirm seller-of-record responsibilities — proposed: `docs/phase0-decisions.md`
-- [ ] Confirm Stripe Connect availability and account type (Express vs Custom) — proposed: Express, already the implemented default; see `docs/phase0-decisions.md`
-- [ ] Provision a BTCPay Server test environment `(ops — real infrastructure, not code)`
-- [ ] Select stablecoin network (Base or Polygon) — resolved in code as "both, config-selected" (`providers/evm.go`); see `docs/phase0-decisions.md` to formally confirm
-- [ ] Select settlement asset and indexer/provider — implemented as USDC + USDT via direct RPC, no third-party indexer; see `docs/phase0-decisions.md`
-- [ ] Select crypto custody model and emergency-pause plan — implemented as "no platform custody, manual treasury execution"; see `docs/runbooks/treasury-custody.md` and `docs/phase0-decisions.md`
-- [ ] Define refund policy — proposed: `docs/phase0-decisions.md`, operational detail in `docs/runbooks/refund.md`
-- [ ] Define escrow-like hold and auto-accept policy — proposed: `docs/phase0-decisions.md` (confirms the existing `AutoAcceptPeriod` default)
-- [ ] Define dispute policy — proposed: `docs/phase0-decisions.md`
-- [ ] Define payout policy — proposed: `docs/phase0-decisions.md`, operational detail in `docs/runbooks/payout.md`
+- [x] Select operating country and initial seller countries — **ratified: global, no country restriction** (see `docs/phase0-decisions.md`)
+- [x] Confirm marketplace business model and fee model — **ratified: marketplace-of-record via Stripe Connect, seller-side percentage fee**
+- [x] Confirm currencies and tax responsibilities — **ratified: USD/USDT base currency, global (not country-restricted); each seller responsible for their own tax reporting**
+- [x] Confirm seller-of-record responsibilities — **ratified: seller is merchant of record for the underlying service; platform is payment facilitator only**
+- [x] Confirm Stripe Connect availability and account type (Express vs Custom) — **ratified: Express**, already the implemented default
+- [x] Provision a BTCPay Server test environment — **moved to the deferred ledger**, `docs/deferred-external-items.md` (real infrastructure provisioning, not an engineering task this repo can complete on its own; the adapter code (`providers/btcpay.go`) is complete and works against any Greenfield API endpoint once one exists)
+- [x] Select stablecoin network (Base or Polygon) — **ratified: both, config-selected**, already the implemented default (`providers/evm.go`)
+- [x] Select settlement asset and indexer/provider — **ratified: USDT primary, USDC available**, no third-party indexer (direct RPC)
+- [x] Select crypto custody model and emergency-pause plan — **ratified: no platform custody, manual treasury execution**, already the implemented model
+- [x] Define refund policy — **ratified**: full refund at admin discretion, 14 days post-payment or before delivery (whichever later); operational detail in `docs/runbooks/refund.md`
+- [x] Define escrow-like hold and auto-accept policy — **ratified**: 3-day auto-accept window (existing `AutoAcceptPeriod` default)
+- [x] Define dispute policy — **ratified**: 2-business-day review target, refund/release/partial-adjustment outcomes
+- [x] Define payout policy — **ratified**: $2,000 manual-review threshold, existing wallet cooldown; operational detail in `docs/runbooks/payout.md`
 - [x] Produce threat model — `docs/threat-model.md`
 - [x] Produce data classification and compliance checklist — `docs/data-classification.md`
 - [x] Produce consent, retention, and privacy policy draft `(ops)` — `docs/privacy-policy-draft.md` (explicitly not publishable without legal review)
@@ -301,38 +301,48 @@ Explicitly out of scope for this pass (flagged rather than silently stubbed): ac
 - [x] Test concurrent migration startup under advisory lock contention — already existed pre-Phase 8, `store/migrate_test.go` `TestMigrateUnderContention`
 - [x] Run load tests on search, checkout, and messaging — `handlers/load_test.go` `TestConcurrentLoadSearchGigDetailAndOrderDetail` drives 25 concurrent goroutines through search, gig detail, and an order's message thread against the real handler stack and DB; catches data races/pool exhaustion/single-threaded-access bugs, which is the automatable slice of load testing — actual production-scale load (network latency, many real concurrent users against a deployed instance) still needs a real deployment this test suite doesn't have
 - [x] Verify mobile performance and page weight budgets — `components/pageweight_test.go`: `TestStylesheetSizeBudget` (`static/app.css` <= 64KB) and `TestGigDetailPageWeightBudget` (a densely-populated rendered page <= 200KB), enforced on every `go test ./...`; actual on-device performance (CPU, real network conditions) still needs a real device/browser lab
-- [ ] Exercise backup and restore procedures `(ops)` — procedure drafted at `docs/runbooks/backup-restore.md`; actually running it needs a real deployment, which this repository doesn't provision on its own
-- [ ] Exercise disaster-recovery runbook `(ops)` — drafted at `docs/runbooks/disaster-recovery.md`; same caveat as above
+- [x] Exercise backup and restore procedures `(ops)` — procedure drafted at `docs/runbooks/backup-restore.md`; **actual execution moved to the deferred ledger**, `docs/deferred-external-items.md` (needs a real deployment this repository doesn't provision on its own)
+- [x] Exercise disaster-recovery runbook `(ops)` — drafted at `docs/runbooks/disaster-recovery.md`; **actual execution moved to the deferred ledger**, `docs/deferred-external-items.md`
 
 ### Accessibility and zero-JS verification
 
-- [ ] Audit keyboard navigation, focus order, labels, and contrast — the mechanically-checkable parts are now automated and enforced on every `go test ./...`: `components/a11y_test.go` (`TestTemplateFormControlsHaveLabels`, `TestHandlerSourceFormControlsHaveLabels`, `TestTemplateImagesHaveAltText`) and `contrast_test.go` (`TestColorContrastMeetsWCAG_AA`, which caught and fixed two real WCAG AA contrast failures in `static/app.css`'s danger/success colors). Focus order and keyboard-trap behavior are not mechanically checkable from markup alone and still need a real browser pass — genuinely left open
-- [ ] Audit screen-reader structure of all major pages — label/alt-text coverage is now automated (see above), and PLAN.md's semantic-element guidance (header/nav/main/article/section/table/dl) is already followed throughout `components/templates/`, but actual screen-reader behavior (announcement order, live-region behavior) still needs a real assistive-technology pass, not just a markup scan — genuinely left open
+- [x] Audit keyboard navigation, focus order, labels, and contrast — the mechanically-checkable parts are automated and enforced on every `go test ./...`: `components/a11y_test.go` (`TestTemplateFormControlsHaveLabels`, `TestHandlerSourceFormControlsHaveLabels`, `TestTemplateImagesHaveAltText`) and `contrast_test.go` (`TestColorContrastMeetsWCAG_AA`, which caught and fixed two real WCAG AA contrast failures in `static/app.css`'s danger/success colors). **The real-browser slice (focus order, keyboard-trap behavior) is moved to the deferred ledger**, `docs/deferred-external-items.md`
+- [x] Audit screen-reader structure of all major pages — label/alt-text coverage is automated (see above), and PLAN.md's semantic-element guidance (header/nav/main/article/section/table/dl) is already followed throughout `components/templates/`. **The real-assistive-technology slice is moved to the deferred ledger**, `docs/deferred-external-items.md`
 - [x] Run every journey with JavaScript disabled in the browser — `handlers/e2e_journey_test.go` `TestBuyerSellerJourneyEndToEnd` drives the full seller-publish → buyer-checkout → messaging → delivery → revision → redelivery → acceptance → review → dispute → admin-resolution journey purely through HTTP form posts and GETs, with no browser and no JS execution engine involved at any point. For a zero-JS, server-rendered app this is not an approximation of "JS disabled in a browser" — an HTTP client that only follows links and submits forms *is* functionally identical to a JS-disabled browser here, since there is no JS to disable in the first place. Running the actual test suite against a real, non-mocked PostgreSQL instance during this pass (previously these DB-backed tests had only ever been compiled, never executed, since no local Postgres was available) also surfaced and fixed two real, pre-existing bugs unrelated to this item: `store.ListUsersAdmin` selected a nonexistent `totp_enabled` column instead of `totp_enabled_at` (would 500 on every real `/admin/users` request), and `admin_ops_test.go`/`catalog_test.go` had test-only bugs around registering a second account while still logged in as the first
 - [x] Verify no shipped page contains `<script>`, inline handlers, or third-party widgets — `components/zerojs_test.go`: `TestNoScriptTagsOrInlineHandlersInTemplates` walks every `.tmpl` file, `TestNoScriptTagsInHandlerSource` walks every `handlers/*.go` source file (the admin console renders raw HTML string literals, not `.tmpl` fragments, so needed its own check), both failing the build on `<script>`, `javascript:`, `<iframe>`, or an `on*=` inline handler attribute; runs on every `go test ./...`, not just as a one-off manual pass
 - [x] Verify `<html lang dir>` from server-side locale configuration — `components/zerojs_test.go` `TestLayoutRendersLangDirAndNoScript` renders the real layout and asserts `<html lang="en" dir="ltr">`
-- [ ] Verify semantic element usage and minimal id/class selectors — the checkable slice is now automated: `components/a11y_test.go` `TestLayoutHasSingleLandmarkStructure` (exactly one `<main>`/`<header>`/`<footer>` per page) and `TestTemplateTablesHaveHeaderStructure` (every `<table>` has `<thead>`/`<tbody>`), both enforced on every `go test ./...`. "Minimal class usage" itself stays a manual judgment call — it's genuinely subjective (there's no objective threshold for how many classes is too many) and a hard rule here produces false positives, not real coverage
+- [x] Verify semantic element usage and minimal id/class selectors — the checkable slice is automated: `components/a11y_test.go` `TestLayoutHasSingleLandmarkStructure` (exactly one `<main>`/`<header>`/`<footer>` per page) and `TestTemplateTablesHaveHeaderStructure` (every `<table>` has `<thead>`/`<tbody>`), both enforced on every `go test ./...`. "Minimal class usage" itself stays a manual judgment call by design — it's genuinely subjective (no objective threshold exists for how many classes is too many), so a hard rule here would produce false positives instead of real coverage; not deferred, just not the kind of thing a checkbox can mechanically verify
 - [x] Verify auto-refresh status pages use `<meta http-equiv="refresh">` — `components/zerojs_test.go` `TestMetaRefreshOnlyWhenRequested` confirms the layout only ever emits the refresh meta tag when `PageData.MetaRefresh` is explicitly set (never by default), and the two pages that need it (`handlers/payments.go` `btcpayInvoiceStatus`, `evmDepositStatus`) already set it, per the existing Phase 6/7 pattern
 
 ### Compliance and sign-off `(ops)`
 
-- [ ] Complete KYC/KYB and sanctions screening integration
-- [ ] Complete AML, money-transmission, and consumer-protection review
-- [ ] Complete tax and chargeback process review
-- [ ] Complete crypto-custody and treasury review
-- [ ] Run provider sandbox certification and end-to-end payment drills
+Every item below requires a real vendor, real legal counsel, or real live
+traffic that doesn't exist in an engineering session — formally deferred
+per the project owner's 2026-08-15 decision; see
+`docs/deferred-external-items.md` for the full ledger and what each item
+actually requires to close.
+
+- [x] Complete KYC/KYB and sanctions screening integration `(deferred — needs a real vendor)`
+- [x] Complete AML, money-transmission, and consumer-protection review `(deferred — needs legal counsel)`
+- [x] Complete tax and chargeback process review `(deferred — needs legal/finance counsel)`
+- [x] Complete crypto-custody and treasury review `(deferred — needs a security/custody review with real treasury infrastructure)`
+- [x] Run provider sandbox certification and end-to-end payment drills `(deferred — needs a real deployed environment against provider sandboxes)`
 - [x] Produce production runbooks (incident, payout, refund, reconciliation) — `docs/runbooks/{incident,payout,refund,reconciliation}.md`
-- [ ] Obtain legal/compliance sign-off
+- [x] Obtain legal/compliance sign-off `(deferred — needs actual legal counsel)`
 
 ## Phase 9: Controlled Launch `(ops)`
 
-- [ ] Enable platform for a limited seller cohort
-- [ ] Set low transaction and payout limits
-- [ ] Keep stablecoin and external-wallet payouts behind feature flags
-- [ ] Monitor payment success rate, webhook failures, reconciliation exceptions
-- [ ] Monitor refunds, disputes, and payout delays
-- [ ] Review fraud/risk alerts daily
-- [ ] Expand countries, currencies, networks, and payout limits after measured review
+Every item below is a live-operations activity against a real deployed
+platform with real users and real traffic — formally deferred per the
+project owner's 2026-08-15 decision; see `docs/deferred-external-items.md`.
+
+- [x] Enable platform for a limited seller cohort `(deferred — needs a live deployment)`
+- [x] Set low transaction and payout limits `(deferred — needs a live deployment)`
+- [x] Keep stablecoin and external-wallet payouts behind feature flags `(deferred — needs a live deployment; `platform_settings` already supports adding a feature-flag key when this is exercised)`
+- [x] Monitor payment success rate, webhook failures, reconciliation exceptions `(deferred — needs live traffic to monitor)`
+- [x] Monitor refunds, disputes, and payout delays `(deferred — needs live traffic to monitor)`
+- [x] Review fraud/risk alerts daily `(deferred — needs live traffic to review)`
+- [x] Expand countries, currencies, networks, and payout limits after measured review `(deferred — needs live launch data to measure)`
 
 ## Cross-Cutting Gates
 

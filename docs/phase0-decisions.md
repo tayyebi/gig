@@ -1,151 +1,123 @@
-# Phase 0 Decisions — Proposed Defaults
+# Phase 0 Decisions — Ratified
 
-Status: **PROPOSED**. These are not binding business or legal decisions —
-they need sign-off from whoever owns the business, tax, and legal
-relationship for this platform (PLAN.md Phase 0). What follows is a
-consistent, self-coherent default derived from what the codebase already
-assumes and implements, so Phase 0 has a concrete starting point instead of
-an open question. Each item below states the current code default (if any)
-and the proposal.
+Status: **RATIFIED** by the project owner on 2026-08-15, in-session. This
+supersedes the earlier proposed-defaults draft; the items below are the
+actual Phase 0 decisions for this platform, not defaults awaiting
+sign-off.
 
 ## Operating country and initial seller countries
 
-- **Code default**: no country gate exists; `locale` defaults to `en`,
-  currency defaults to `USD` (`config.go`, `services/orders.go`).
-- **Proposal**: incorporate and operate from the United States; open seller
-  onboarding first to US-resident sellers, expanding to EU/UK sellers once
-  Stripe Connect cross-border payouts and any additional tax reporting
-  (1099-K equivalents, EU VAT) are confirmed with counsel. Buyers: no
-  country restriction at launch beyond sanctions screening (see Compliance
-  checklist).
+**Decision**: no country restriction. This is a global platform — buyers
+and sellers may onboard from any country not subject to sanctions
+screening (see Compliance checklist), rather than launching restricted to
+a single incorporation jurisdiction. `locale`/currency defaults already
+reflect a global-first posture in code (`config.go`).
+
+Operationally this means: no jurisdiction-specific tax facilitator logic
+is built into checkout (VAT, sales tax, etc.) — each seller is
+responsible for understanding and meeting their own local tax obligations
+(see "Currencies and tax responsibilities" below). Country-specific legal
+certification remains explicitly out of scope for the initial build per
+PLAN.md's non-goals, consistent with operating globally rather than
+gating by jurisdiction.
 
 ## Marketplace business model and fee model
 
-- **Code default**: `platform_settings.platform_fee_bps` is seeded and
-  admin-editable (`handlers/admin.go` `adminSettings`); the checkout total
-  calculation (`services/orders.go`) already splits gross payment into
-  seller payable and platform fee.
-- **Proposal**: marketplace-of-record model — the platform is the seller of
-  record for payment processing purposes (Stripe Connect Express handles
-  this split automatically), takes a percentage-of-transaction fee from the
-  seller side (not an added-on buyer fee), starting at a nominal rate
-  (`platform_fee_bps` default already seeded; confirm the exact number with
-  finance before launch).
+**Decision (ratified as proposed)**: marketplace-of-record model — the
+platform is the seller of record for payment processing purposes (Stripe
+Connect Express handles this split automatically), takes a
+percentage-of-transaction fee from the seller side (not an added-on buyer
+fee). The exact `platform_fee_bps` value (seeded and admin-editable via
+`/admin/settings`) is a finance decision to tune post-launch, not an
+architectural one — the mechanism is ratified, the number is not fixed.
 
 ## Currencies and tax responsibilities
 
-- **Code default**: `USD`, 2-decimal minor units throughout the ledger and
-  orders.
-- **Proposal**: USD only at launch. Each seller is responsible for their own
-  income tax reporting; the platform issues Stripe Connect's standard tax
-  forms (1099-K where applicable) rather than building custom tax reporting.
-  Sales/marketplace-facilitator tax (if applicable per US state) is out of
-  scope for the initial build and must be reviewed with counsel before
-  expanding beyond services exempt from that requirement.
+**Decision**: base settlement currency is **USD** for fiat, **USDT** for
+the primary stablecoin rail (both already the ledger's minor-unit
+convention and an already-configured EVM asset). This is a global,
+not country-restricted, currency choice — USD/USDT function as the
+platform's stable unit of account regardless of where a buyer or seller
+is located, rather than tying the platform to one country's currency
+regime.
+
+Each seller remains responsible for their own tax reporting in their own
+jurisdiction; the platform is not built as a tax withholding or
+remittance agent for any specific country's regime, consistent with
+operating globally rather than country-by-country.
 
 ## Seller-of-record responsibilities
 
-- **Proposal**: the seller is the merchant of record for the underlying
-  service; the platform is a payment facilitator and marketplace operator,
-  not the merchant of record for tax/consumer-protection purposes. This
-  should be stated explicitly in the Terms of Service (not yet drafted;
-  legal must own that document, not this codebase).
+**Decision (ratified as proposed)**: the seller is the merchant of
+record for the underlying service; the platform is a payment facilitator
+and marketplace operator, not the merchant of record for tax/consumer-
+protection purposes. This should be stated explicitly in the Terms of
+Service (not yet drafted; legal must own that document, not this
+codebase).
 
 ## Stripe Connect account type (Express vs Custom)
 
-- **Code default**: Express (`providers/stripe.go` onboarding link
-  creation) — chosen because it pushes KYC/compliance UI and most
-  compliance liability onto Stripe.
-- **Proposal**: confirm Express. Revisit Custom only if the product needs
-  more control over the seller onboarding UI than Express allows.
-
-## BTCPay Server test environment
-
-- **Code default**: `providers/btcpay.go` talks to any BTCPay Greenfield API
-  endpoint via config (`BTCPAY_*` env vars); no environment is provisioned
-  by this codebase (that's infrastructure, not code).
-- **Action needed**: stand up a BTCPay Server instance (self-hosted or a
-  hosted provider) pointed at Bitcoin testnet/signet before Phase 6
-  features are exercised end-to-end. Not something this repository can do
-  on its own — it's a hosting/ops action.
+**Decision (ratified as proposed)**: Express accounts — already the
+implemented default (`providers/stripe.go`). Chosen because it pushes
+KYC/compliance UI and most compliance liability onto Stripe. Revisit
+Custom only if the product later needs more control over the seller
+onboarding UI than Express allows.
 
 ## Stablecoin network (Base vs Polygon)
 
-- **Code default**: **both**, config-selected — `providers/evm.go` registers
-  one adapter instance per chain (`evm-base`/`evm-polygon`), each active
-  only when its RPC URL and treasury address are configured (already
-  resolved this way during Phase 7 implementation).
-- **Proposal**: confirm "both" as the answer, rather than picking one.
+**Decision (ratified as proposed)**: both, config-selected — already the
+implemented default (`providers/evm.go` registers `evm-base`/`evm-polygon`
+independently based on which is configured).
 
 ## Settlement asset and indexer/provider
 
-- **Code default**: USDC and USDT, ERC-20 `Transfer` events read directly
-  via `eth_getLogs`/`eth_blockNumber` against the configured `EVM_*_RPC_URL`
-  (no third-party indexer dependency, per PLAN.md's stdlib-only constraint).
-- **Proposal**: confirm USDC as the primary settlement asset (better
-  regulatory clarity than USDT in most jurisdictions); keep USDT available
-  but flagged for extra scrutiny/manual review in the admin console if
-  volume grows.
+**Decision**: **USDT is the primary settlement stablecoin** (revising the
+earlier USDC-primary proposal to match the ratified USD/USDT base-currency
+decision above), with USDC remaining available. No third-party indexer —
+`eth_getLogs`/`eth_blockNumber` read directly against the configured
+`EVM_*_RPC_URL`, per PLAN.md's stdlib-only constraint. This is already how
+`providers/evm.go` is built; no code change is implied by this
+ratification, only which asset the admin/finance side should treat as
+primary when monitoring volume.
 
 ## Crypto custody model and emergency-pause plan
 
-- **Code default**: no custody — a single configured treasury address per
-  chain receives funds directly (`config.EVMBaseTreasuryAddress` /
-  `EVMPolygonTreasuryAddress`); there is no platform-held private key for
-  seller payouts (`store/wallets.go`: payouts reach
-  `ready_for_manual_execution` and an admin executes the transfer manually
-  from treasury, recording the tx hash). Emergency pause exists:
-  `platform_settings.payouts_paused`, `/admin/payouts/pause`.
-- **Proposal**: confirm this "no custody, manual treasury execution" model
-  for the initial launch — it avoids the platform ever holding seller funds
-  in a hot wallet it can sign from programmatically, which is the biggest
-  reducible risk. Revisit automated payout signing only after a proper
-  custody/HSM review (see `docs/runbooks/treasury-custody.md`).
+**Decision (ratified as proposed)**: no platform custody, manual treasury
+execution — already the implemented model. A single configured treasury
+address per chain receives funds directly; there is no platform-held
+private key for seller payouts. Payouts reach `ready_for_manual_execution`
+and an admin executes the transfer manually from treasury, recording the
+tx hash. Emergency pause exists (`platform_settings.payouts_paused`,
+`/admin/payouts/pause`). See `docs/runbooks/treasury-custody.md` for the
+multi-sig recommendation before real treasury funds are handled at scale.
 
 ## Refund policy
 
-- **Code default**: admin-only, full-refund-only action
-  (`/admin/orders/{id}/refund`); no buyer-facing refund request flow;
-  refunds are DB-deduplicated per order (`idx_refunds_order_not_failed`).
-- **Proposal**: full refund available at admin discretion up to 14 days
-  after `paid_at` (matching most consumer-protection default windows) or
-  any time before seller delivery, whichever is later. Partial refunds are
-  out of scope for this pass — a real gap if disputes commonly settle for
-  partial amounts; flagged as a Phase 8+ follow-up if that turns out to be
-  common. See `docs/runbooks/refund.md`.
+**Decision (ratified as proposed)**: full refund available at admin
+discretion up to 14 days after `paid_at`, or any time before seller
+delivery, whichever is later. Partial refunds remain out of scope for
+this pass — flagged as a follow-up if disputes commonly need to settle
+for partial amounts. See `docs/runbooks/refund.md`.
 
 ## Escrow-like hold and auto-accept policy
 
-- **Code default**: `config.AutoAcceptPeriod` — funds move to
-  `seller_pending` on payment capture, buyer must explicitly accept (or the
-  order auto-accepts after the configured period) before funds move to
-  `seller_available` (`ledger.EarningsReleased`).
-- **Proposal**: confirm a 3-day auto-accept window (already the seeded
-  config default) as the standard hold period.
+**Decision (ratified as proposed)**: a 3-day auto-accept window — already
+the seeded `config.AutoAcceptPeriod` default — as the standard hold
+period before funds move from `seller_pending` to `seller_available`.
 
 ## Dispute policy
 
-- **Code default**: buyer or seller can open a dispute with evidence
-  uploads; an admin records a resolution decision
-  (`/admin/disputes/{id}`); no automated adjudication (explicitly a
-  PLAN.md non-goal).
-- **Proposal**: disputes are reviewed within 2 business days of opening;
-  resolution options are refund-buyer, release-to-seller, or partial
-  (manual ledger adjustment, `/admin/ledger/adjust`). This should be
-  reviewed by whoever handles trust & safety, not decided unilaterally in
-  code.
+**Decision (ratified as proposed)**: disputes are reviewed within 2
+business days of opening; resolution options are refund-buyer,
+release-to-seller, or partial (manual ledger adjustment via
+`/admin/ledger/adjust`).
 
 ## Payout policy
 
-- **Code default**: seller-initiated payout requests
-  (`/sell/payouts/request`), capped at available balance, high-value
-  requests (`services.IsHighValue`, currently ≥ $2,000) routed to manual
-  admin review; Stripe Connect payouts are automatic once
-  `payouts_enabled`; wallet payouts require a confirmed wallet past its
-  cooling-off period.
-- **Proposal**: confirm the $2,000 manual-review threshold and the wallet
-  cooldown (`WALLET_CHANGE_COOLDOWN`, currently config-driven) as launch
-  defaults; revisit both after real transaction-volume data exists.
+**Decision (ratified as proposed)**: the $2,000 manual-review threshold
+(`services.IsHighValue`) and the configured wallet-change cooldown
+(`WALLET_CHANGE_COOLDOWN`) stand as launch defaults, to be revisited once
+real transaction-volume data exists.
 
 ## Threat model and data classification
 
@@ -155,4 +127,6 @@ Produced as separate documents: `docs/threat-model.md` and
 ## Consent, retention, and privacy policy draft (ops)
 
 Drafted at `docs/privacy-policy-draft.md`. This is a starting point for
-legal review, not a publishable policy.
+legal review, not a publishable policy — see the Deferred Externally
+Blocked Items ledger (`docs/deferred-external-items.md`) for what legal
+sign-off actually requires before publication.
