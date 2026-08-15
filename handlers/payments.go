@@ -213,15 +213,31 @@ func (s *Server) evmDepositStatus(w http.ResponseWriter, r *http.Request) {
 		statusText = "deposit detected, waiting for confirmations"
 	}
 	currency := strings.ToUpper(intent.Currency)
+
+	// The QR payload is a simple delimited chain/address/amount string, not
+	// an EIP-681 `ethereum:<contract>/transfer?...` URI: EIP-681's uint256
+	// parameter expects raw token base units, but the buyer-facing amount
+	// here is a fiat-equivalent (formatMoney'd) figure, and providers.EVM
+	// exposes no per-asset decimals to convert one to the other reliably.
+	// A plain scannable string a wallet app's camera can still read the
+	// address out of (falling back to the <code> block for copy-paste)
+	// keeps this correct without guessing at token decimals.
+	qrPayload := fmt.Sprintf("%s|%s|%s %s", ep.ChainName, ep.TreasuryAddress, formatMoney(intent.AmountMinor, currency), currency)
+	qrHTML := ""
+	if svg, err := services.EncodeQRCodeSVG(qrPayload, 4); err == nil {
+		qrHTML = fmt.Sprintf(`<div class="qr-code">%s</div>`, svg)
+	}
+
 	body := fmt.Sprintf(`<section class="container">
 <h1>Stablecoin deposit</h1>
 <p>Status: %s</p>
 <p>Send exactly <strong>%s</strong> worth of USDC to this address on %s:</p>
+%s
 <p><code>%s</code></p>
 <p class="help">This page refreshes automatically. Once the transfer reaches %d confirmations, order #%d will move to in progress. Send only from a wallet you control, and only this exact amount &mdash; the platform cannot distinguish deposits by any other means.</p>
 <p><a href="/orders/%d">Back to order</a></p>
 </section>`, html.EscapeString(statusText), html.EscapeString(formatMoney(intent.AmountMinor, currency)),
-		html.EscapeString(ep.ChainName), html.EscapeString(ep.TreasuryAddress), ep.RequiredConfirmations, access.Order.ID, access.Order.ID)
+		html.EscapeString(ep.ChainName), qrHTML, html.EscapeString(ep.TreasuryAddress), ep.RequiredConfirmations, access.Order.ID, access.Order.ID)
 
 	p := pageWithRawBody("Stablecoin deposit", body)
 	p.MetaRefresh = 5
@@ -495,8 +511,68 @@ func (s *Server) adminOrderPayments(w http.ResponseWriter, r *http.Request) {
 <button class="btn" type="submit">Refund order</button>
 </form>`, html.EscapeString(formatMoney(intent.AmountMinor, currency)), html.EscapeString(intent.Provider), orderID, csrfInputHTML(s.csrfFor(r))))
 	}
+
+	// BTCPay (webhook-driven, so PaidPartial/PaidLate underpayment cases show
+	// up here) and EVM (webhook-less, polled) both need more than the generic
+	// provider/ref/status/amount block above to give admins the "complete
+	// order and payment timelines" PLAN.md section 15 asks for: a live
+	// re-check against the provider plus the recorded attempt history.
+	if intent.Provider == "btcpay" || strings.HasPrefix(intent.Provider, "evm-") {
+		s.renderOnChainPaymentDetail(r, &sb, intent)
+	}
+
 	sb.WriteString(`</section>`)
 	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - order payments", sb.String()))
+}
+
+// renderOnChainPaymentDetail appends BTCPay- and EVM-specific admin detail
+// to an in-progress order payments page: a fresh live status check against
+// the provider (which, for EVM, is the only place a transaction hash and
+// confirmation-derived status ever come from, since there are no inbound
+// webhooks) plus the recorded payment_attempts history, if any.
+func (s *Server) renderOnChainPaymentDetail(r *http.Request, sb *strings.Builder, intent *store.PaymentIntent) {
+	ctx := r.Context()
+
+	sb.WriteString(`<h2>On-chain payment detail</h2>`)
+	if provider, ok := s.Providers.Get(intent.Provider); ok && intent.ProviderRef != "" {
+		live, err := provider.Payment(ctx, intent.ProviderRef)
+		if err != nil {
+			sb.WriteString(fmt.Sprintf(`<p class="help">Live provider check failed: %s</p>`, html.EscapeString(err.Error())))
+		} else {
+			sb.WriteString(`<dl>`)
+			sb.WriteString(fmt.Sprintf(`<dt>Live provider status</dt><dd>%s</dd>`, html.EscapeString(live.Status)))
+			if live.ChargeRef != "" {
+				label := "Charge reference"
+				if strings.HasPrefix(intent.Provider, "evm-") {
+					label = "Transaction hash"
+				}
+				sb.WriteString(fmt.Sprintf(`<dt>%s</dt><dd><code>%s</code></dd>`, label, html.EscapeString(live.ChargeRef)))
+			}
+			if live.FailureCode != "" || live.FailureReason != "" {
+				sb.WriteString(fmt.Sprintf(`<dt>Failure</dt><dd>%s %s</dd>`, html.EscapeString(live.FailureCode), html.EscapeString(live.FailureReason)))
+			}
+			sb.WriteString(`</dl>`)
+		}
+	} else {
+		sb.WriteString(`<p class="help">No configured provider adapter to re-check this payment against.</p>`)
+	}
+
+	attempts, err := s.Store.ListPaymentAttemptsForIntent(ctx, intent.ID)
+	if err != nil {
+		sb.WriteString(fmt.Sprintf(`<p class="help">Could not load payment attempt history: %s</p>`, html.EscapeString(err.Error())))
+		return
+	}
+	if len(attempts) == 0 {
+		sb.WriteString(`<p class="help">No recorded provider status observations (webhook history) for this payment yet.</p>`)
+		return
+	}
+	sb.WriteString(`<h3>Provider status history</h3><table><thead><tr><th scope="col">When</th><th scope="col">Provider status</th><th scope="col">Failure code</th><th scope="col">Failure message</th></tr></thead><tbody>`)
+	for _, a := range attempts {
+		sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
+			html.EscapeString(a.CreatedAt.Format("2006-01-02 15:04:05")), html.EscapeString(a.ProviderStatus),
+			html.EscapeString(a.FailureCode), html.EscapeString(a.FailureMessage)))
+	}
+	sb.WriteString(`</tbody></table>`)
 }
 
 // adminPayouts lists queued and manual-review payouts, and the emergency

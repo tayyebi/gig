@@ -206,6 +206,45 @@ func (s *Store) RecordPaymentAttempt(ctx context.Context, intentID int64, provid
 	return nil
 }
 
+// PaymentAttempt is one raw provider status observation recorded against a
+// payment intent (e.g. a BTCPay invoice status change or an EVM
+// confirmation-depth update from the reconciliation sweep), kept for
+// support and admin visibility even after the intent's own status moves on.
+type PaymentAttempt struct {
+	ID              int64
+	PaymentIntentID int64
+	ProviderStatus  string
+	FailureCode     string
+	FailureMessage  string
+	RawPayloadHash  string
+	CreatedAt       time.Time
+}
+
+// ListPaymentAttemptsForIntent returns every raw status observation recorded
+// for a payment intent, most recent first, for the admin per-order payment
+// timeline (PLAN.md section 15, "complete order and payment timelines").
+func (s *Store) ListPaymentAttemptsForIntent(ctx context.Context, intentID int64) ([]PaymentAttempt, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, payment_intent_id, provider_status, failure_code, failure_message, raw_payload_hash, created_at
+		FROM payment_attempts
+		WHERE payment_intent_id = $1
+		ORDER BY created_at DESC`, intentID)
+	if err != nil {
+		return nil, fmt.Errorf("list payment attempts for intent %d: %w", intentID, err)
+	}
+	defer rows.Close()
+
+	var out []PaymentAttempt
+	for rows.Next() {
+		var a PaymentAttempt
+		if err := rows.Scan(&a.ID, &a.PaymentIntentID, &a.ProviderStatus, &a.FailureCode, &a.FailureMessage, &a.RawPayloadHash, &a.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan payment attempt: %w", err)
+		}
+		out = append(out, a)
+	}
+	return out, rows.Err()
+}
+
 // InsertWebhookEvent records a verified provider webhook event, deduplicated
 // by (provider, event_id). It returns inserted=false without error when the
 // event has already been seen, so the caller can ack idempotently.

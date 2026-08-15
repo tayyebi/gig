@@ -230,7 +230,7 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 - [x] Implement refund handling for BTCPay — `Refund` creates a pull payment (BTCPay refunds are buyer-claimed, not instant, so status is always `processing` until reconciled)
 - [x] Define confirmations-before-fulfillment policy in config — `config.BTCPayRequiredConfirmations`
 - [x] Add reconciliation job scanning BTCPay for missed webhooks — reuses the existing provider-agnostic stale-intent sweep, now dispatched per-provider via `providers.Registry`
-- [ ] Add admin visibility for BTCPay invoices — falls back to the existing generic per-order payment-intent view; no BTCPay-specific admin page yet
+- [x] Add admin visibility for BTCPay invoices — `handlers/payments.go` `adminOrderPayments`/`renderOnChainPaymentDetail` adds a live provider re-check plus `payment_attempts` status history (`store.ListPaymentAttemptsForIntent`) below the generic view when `intent.Provider == "btcpay"`
 
 ## Phase 7: Stablecoin Payments and Wallet Payouts
 
@@ -242,12 +242,12 @@ Network choice (Phase 0's Base-vs-Polygon gate) was resolved for this pass as "b
 - [x] Configure chain ID, RPC/indexer, token contract addresses, confirmation count — `config.EVMBase*`/`EVMPolygon*`/`EVMRequiredConfirmations`
 - [x] Verify token contract addresses from config only, never user input
 - [x] Generate per-order deposit address or unique payment reference — a single configured treasury address plus a provider-ref-encoded expected-amount match, not a per-order generated address (no HD wallet custody in scope)
-- [ ] Render server-generated QR code and deposit instructions as plain HTML — deposit instructions page exists (`handlers/payments.go` `evmDepositStatus`) but shows the address as text only; no QR encoder implemented yet
+- [x] Render server-generated QR code and deposit instructions as plain HTML — `services/qrcode.go` is a from-scratch stdlib-only QR encoder (byte mode, ECC level L, versions 1-6, mask selection by penalty score) rendering plain inline `<svg>`; wired into `evmDepositStatus` above the existing `<code>` address fallback
 - [x] Implement transaction verification (sender, recipient, amount, block, confirmations) — amount-match against `Transfer` logs to the treasury address, confirmation depth from `eth_blockNumber`
 - [x] Implement reorg-safe confirmation handling — `EVMRequiredConfirmations` gates `succeeded` status
 - [x] Implement reconciliation job scanning indexer for missed webhooks — reuses the existing provider-agnostic `payment.reconcile_sweep`, no new job needed since EVM has no inbound webhooks by design
 - [x] Implement refund policy for stablecoin payments — admin-queued/manual, same "processing until reconciled" precedent as BTCPay refunds (no treasury signing key in scope)
-- [ ] Add admin visibility for on-chain payments — falls back to the existing generic per-order payment-intent view, same as BTCPay's current state
+- [x] Add admin visibility for on-chain payments — same `renderOnChainPaymentDetail` addition as BTCPay above, triggered for `evm-*` providers; since EVM has no inbound webhooks, its most useful field is the live provider re-check (tx hash via `ChargeRef`, confirmation-derived status), not attempt history, which stays empty for this provider today
 
 ### Wallet payouts
 
