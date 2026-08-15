@@ -27,6 +27,7 @@ func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
 <li><a href="/admin/moderation/media">Media moderation</a></li>
 <li><a href="/admin/moderation/reviews">Review moderation</a></li>
 <li><a href="/admin/moderation/messages">Message moderation</a></li>
+<li><a href="/admin/categories">Categories &amp; tags</a></li>
 <li><a href="/admin/disputes">Disputes</a></li>
 <li><a href="/admin/payments">Payments &amp; reconciliation</a></li>
 <li><a href="/admin/payments/search">Payment search</a></li>
@@ -620,6 +621,209 @@ func (s *Server) adminSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 	s.audit(r.Context(), &admin.ID, r, "settings.updated", "platform_settings", key, map[string]any{"value": value})
 	s.flashNotice(r, "Setting saved.")
 	http.Redirect(w, r, "/admin/settings", http.StatusSeeOther)
+}
+
+// adminCategories lists and edits browse categories, and lists seller-
+// supplied tags with their usage counts so an admin can prune or
+// consolidate free-text tag sprawl (categories are curated; tags are not).
+func (s *Server) adminCategories(w http.ResponseWriter, r *http.Request) {
+	cats, err := s.Store.ListCategories(r.Context())
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	tags, err := s.Store.ListTagsWithUsage(r.Context())
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	csrf := csrfInputHTML(s.csrfFor(r))
+
+	var sb strings.Builder
+	sb.WriteString(`<section class="container"><h1>Categories and tags</h1><h2>Categories</h2>
+<table><thead><tr><th scope="col">Slug</th><th scope="col">Name</th><th scope="col">Description</th><th scope="col">Position</th><th scope="col">Action</th></tr></thead><tbody>`)
+	for _, c := range cats {
+		sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>
+<form method="post" action="/admin/categories/%d" novalidate>
+%s
+<input name="name" type="text" required value="%s">
+<input name="description" type="text" value="%s">
+<input name="position" type="number" value="%d" style="width:5em">
+<button class="btn" type="submit">Save</button>
+</form></td><td></td><td></td><td>
+<form method="post" action="/admin/categories/%d/delete" novalidate>
+%s
+<button class="btn" type="submit">Delete</button>
+</form></td></tr>`,
+			html.EscapeString(c.Slug), c.ID, csrf, html.EscapeString(c.Name), html.EscapeString(c.Description), c.Position,
+			c.ID, csrf))
+	}
+	sb.WriteString(`</tbody></table>
+<h3>Add a category</h3>
+<form method="post" action="/admin/categories" novalidate>
+` + csrf + `
+<label for="new-cat-slug">Slug</label>
+<input id="new-cat-slug" name="slug" type="text" required pattern="[a-z0-9-]+">
+<label for="new-cat-name">Name</label>
+<input id="new-cat-name" name="name" type="text" required>
+<label for="new-cat-desc">Description</label>
+<input id="new-cat-desc" name="description" type="text">
+<label for="new-cat-pos">Position</label>
+<input id="new-cat-pos" name="position" type="number" value="0" style="width:5em">
+<button class="btn" type="submit">Add category</button>
+</form>
+
+<h2>Tags</h2>
+<table><thead><tr><th scope="col">Tag</th><th scope="col">Gigs using it</th><th scope="col">Action</th></tr></thead><tbody>`)
+	if len(tags) == 0 {
+		sb.WriteString(`<tr><td colspan="3">No tags yet.</td></tr>`)
+	}
+	for _, t := range tags {
+		sb.WriteString(fmt.Sprintf(`<tr><td>
+<form method="post" action="/admin/tags/%d" novalidate>
+%s
+<input name="name" type="text" required value="%s">
+<button class="btn" type="submit">Rename</button>
+</form></td><td>%d</td><td>
+<form method="post" action="/admin/tags/%d/delete" novalidate>
+%s
+<button class="btn" type="submit">Delete</button>
+</form></td></tr>`, t.ID, csrf, html.EscapeString(t.Name), t.GigCount, t.ID, csrf))
+	}
+	sb.WriteString(`</tbody></table>
+<p><a href="/admin">Back to admin</a></p></section>`)
+	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - categories and tags", sb.String()))
+}
+
+func (s *Server) adminCategoryCreate(w http.ResponseWriter, r *http.Request) {
+	admin := s.userFrom(r)
+	if err := r.ParseForm(); err != nil {
+		s.renderError(w, err)
+		return
+	}
+	slug := strings.TrimSpace(r.FormValue("slug"))
+	name := strings.TrimSpace(r.FormValue("name"))
+	description := strings.TrimSpace(r.FormValue("description"))
+	position, _ := strconv.Atoi(r.FormValue("position"))
+	if slug == "" || name == "" {
+		s.flashError(r, "A slug and name are required.")
+		http.Redirect(w, r, "/admin/categories", http.StatusSeeOther)
+		return
+	}
+	id, err := s.Store.CreateCategory(r.Context(), slug, name, description, position)
+	if err != nil {
+		s.flashError(r, "Could not create category (slug may already be in use).")
+		http.Redirect(w, r, "/admin/categories", http.StatusSeeOther)
+		return
+	}
+	s.audit(r.Context(), &admin.ID, r, "category.created", "category", strconv.FormatInt(id, 10),
+		map[string]any{"slug": slug, "name": name})
+	s.flashNotice(r, "Category added.")
+	http.Redirect(w, r, "/admin/categories", http.StatusSeeOther)
+}
+
+func (s *Server) adminCategoryUpdate(w http.ResponseWriter, r *http.Request) {
+	admin := s.userFrom(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.renderError(w, err)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	description := strings.TrimSpace(r.FormValue("description"))
+	position, _ := strconv.Atoi(r.FormValue("position"))
+	if name == "" {
+		s.flashError(r, "A name is required.")
+		http.Redirect(w, r, "/admin/categories", http.StatusSeeOther)
+		return
+	}
+	if err := s.Store.UpdateCategory(r.Context(), id, name, description, position); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			s.notFound(w, r)
+			return
+		}
+		s.renderError(w, err)
+		return
+	}
+	s.audit(r.Context(), &admin.ID, r, "category.updated", "category", strconv.FormatInt(id, 10),
+		map[string]any{"name": name, "position": position})
+	s.flashNotice(r, "Category updated.")
+	http.Redirect(w, r, "/admin/categories", http.StatusSeeOther)
+}
+
+func (s *Server) adminCategoryDelete(w http.ResponseWriter, r *http.Request) {
+	admin := s.userFrom(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	if err := s.Store.DeleteCategory(r.Context(), id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			s.notFound(w, r)
+			return
+		}
+		s.renderError(w, err)
+		return
+	}
+	s.audit(r.Context(), &admin.ID, r, "category.deleted", "category", strconv.FormatInt(id, 10), nil)
+	s.flashNotice(r, "Category deleted.")
+	http.Redirect(w, r, "/admin/categories", http.StatusSeeOther)
+}
+
+func (s *Server) adminTagRename(w http.ResponseWriter, r *http.Request) {
+	admin := s.userFrom(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.renderError(w, err)
+		return
+	}
+	name := strings.TrimSpace(r.FormValue("name"))
+	if name == "" {
+		s.flashError(r, "A name is required.")
+		http.Redirect(w, r, "/admin/categories", http.StatusSeeOther)
+		return
+	}
+	if err := s.Store.RenameTag(r.Context(), id, name); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			s.notFound(w, r)
+			return
+		}
+		s.flashError(r, "Could not rename tag (the new name may collide with an existing tag).")
+		http.Redirect(w, r, "/admin/categories", http.StatusSeeOther)
+		return
+	}
+	s.audit(r.Context(), &admin.ID, r, "tag.renamed", "tag", strconv.FormatInt(id, 10), map[string]any{"name": name})
+	s.flashNotice(r, "Tag renamed.")
+	http.Redirect(w, r, "/admin/categories", http.StatusSeeOther)
+}
+
+func (s *Server) adminTagDelete(w http.ResponseWriter, r *http.Request) {
+	admin := s.userFrom(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	if err := s.Store.DeleteTag(r.Context(), id); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			s.notFound(w, r)
+			return
+		}
+		s.renderError(w, err)
+		return
+	}
+	s.audit(r.Context(), &admin.ID, r, "tag.deleted", "tag", strconv.FormatInt(id, 10), nil)
+	s.flashNotice(r, "Tag deleted.")
+	http.Redirect(w, r, "/admin/categories", http.StatusSeeOther)
 }
 
 func (s *Server) adminAuditLog(w http.ResponseWriter, r *http.Request) {

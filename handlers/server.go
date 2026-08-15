@@ -120,6 +120,12 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /admin/moderation/reviews/{id}", s.requireRole(store.RoleAdmin, s.adminModerationReviewDecide))
 	mux.HandleFunc("GET /admin/moderation/messages", s.requireRole(store.RoleAdmin, s.adminModerationMessages))
 	mux.HandleFunc("POST /admin/moderation/messages/{id}/hide", s.requireRole(store.RoleAdmin, s.adminModerationMessageHide))
+	mux.HandleFunc("GET /admin/categories", s.requireRole(store.RoleAdmin, s.adminCategories))
+	mux.HandleFunc("POST /admin/categories", s.requireRole(store.RoleAdmin, s.adminCategoryCreate))
+	mux.HandleFunc("POST /admin/categories/{id}", s.requireRole(store.RoleAdmin, s.adminCategoryUpdate))
+	mux.HandleFunc("POST /admin/categories/{id}/delete", s.requireRole(store.RoleAdmin, s.adminCategoryDelete))
+	mux.HandleFunc("POST /admin/tags/{id}", s.requireRole(store.RoleAdmin, s.adminTagRename))
+	mux.HandleFunc("POST /admin/tags/{id}/delete", s.requireRole(store.RoleAdmin, s.adminTagDelete))
 
 	// Admin: dispute resolution console.
 	mux.HandleFunc("GET /admin/disputes", s.requireRole(store.RoleAdmin, s.adminDisputes))

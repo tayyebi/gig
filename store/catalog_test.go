@@ -50,6 +50,109 @@ func TestListCategoriesSeeded(t *testing.T) {
 	}
 }
 
+func TestCategoryAdminCRUD(t *testing.T) {
+	st := openTestCatalogStore(t)
+	ctx := context.Background()
+
+	id, err := st.CreateCategory(ctx, "widgets", "Widgets", "Widget-making gigs", 5)
+	if err != nil {
+		t.Fatalf("CreateCategory: %v", err)
+	}
+	cat, err := st.GetCategoryBySlug(ctx, "widgets")
+	if err != nil {
+		t.Fatalf("GetCategoryBySlug: %v", err)
+	}
+	if cat.Name != "Widgets" || cat.Position != 5 {
+		t.Fatalf("created category = %+v, want name=Widgets position=5", cat)
+	}
+
+	if err := st.UpdateCategory(ctx, id, "Widgets & Gadgets", "Updated description", 1); err != nil {
+		t.Fatalf("UpdateCategory: %v", err)
+	}
+	cat, err = st.GetCategoryBySlug(ctx, "widgets")
+	if err != nil {
+		t.Fatalf("GetCategoryBySlug after update: %v", err)
+	}
+	if cat.Name != "Widgets & Gadgets" || cat.Position != 1 {
+		t.Fatalf("updated category = %+v, want name=Widgets & Gadgets position=1", cat)
+	}
+
+	if err := st.UpdateCategory(ctx, 999999, "Nope", "", 0); !errors.Is(err, ErrNotFound) {
+		t.Errorf("UpdateCategory on missing id: got %v, want ErrNotFound", err)
+	}
+
+	if err := st.DeleteCategory(ctx, id); err != nil {
+		t.Fatalf("DeleteCategory: %v", err)
+	}
+	if _, err := st.GetCategoryBySlug(ctx, "widgets"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("category after delete: got %v, want ErrNotFound", err)
+	}
+	if err := st.DeleteCategory(ctx, id); !errors.Is(err, ErrNotFound) {
+		t.Errorf("DeleteCategory on already-deleted id: got %v, want ErrNotFound", err)
+	}
+}
+
+func TestTagAdminUsageRenameDelete(t *testing.T) {
+	st := openTestCatalogStore(t)
+	ctx := context.Background()
+
+	seller := mustCreateUser(t, st, "tag-seller@example.test")
+	gig, err := st.CreateGig(ctx, seller, nil, "Tagged Gig", "desc")
+	if err != nil {
+		t.Fatalf("CreateGig: %v", err)
+	}
+	if err := st.SetGigTags(ctx, gig.ID, []string{"Logo Design", "Branding"}); err != nil {
+		t.Fatalf("SetGigTags: %v", err)
+	}
+
+	tags, err := st.ListTagsWithUsage(ctx)
+	if err != nil {
+		t.Fatalf("ListTagsWithUsage: %v", err)
+	}
+	var logoTag *TagWithUsage
+	for i := range tags {
+		if tags[i].Name == "Logo Design" {
+			logoTag = &tags[i]
+		}
+	}
+	if logoTag == nil {
+		t.Fatalf("ListTagsWithUsage did not include %q", "Logo Design")
+	}
+	if logoTag.GigCount != 1 {
+		t.Errorf("logo tag GigCount = %d, want 1", logoTag.GigCount)
+	}
+
+	if err := st.RenameTag(ctx, logoTag.ID, "Logo & Identity Design"); err != nil {
+		t.Fatalf("RenameTag: %v", err)
+	}
+	tags, err = st.ListTagsWithUsage(ctx)
+	if err != nil {
+		t.Fatalf("ListTagsWithUsage after rename: %v", err)
+	}
+	found := false
+	for _, tg := range tags {
+		if tg.ID == logoTag.ID && tg.Name == "Logo & Identity Design" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("renamed tag not found with new name")
+	}
+
+	if err := st.DeleteTag(ctx, logoTag.ID); err != nil {
+		t.Fatalf("DeleteTag: %v", err)
+	}
+	tags, err = st.ListTagsWithUsage(ctx)
+	if err != nil {
+		t.Fatalf("ListTagsWithUsage after delete: %v", err)
+	}
+	for _, tg := range tags {
+		if tg.ID == logoTag.ID {
+			t.Errorf("deleted tag %d still present", logoTag.ID)
+		}
+	}
+}
+
 func TestGigLifecycleAndVisibility(t *testing.T) {
 	st := openTestCatalogStore(t)
 	ctx := context.Background()

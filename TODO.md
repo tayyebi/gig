@@ -108,13 +108,13 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 - [x] Implement seller onboarding state (KYC state, timestamps); `requirements` schema exists but is unpopulated until a real provider lands in Phase 5
 - [x] Implement portfolio upload via multipart forms
 - [x] Implement media validation (content-type sniffing, size cap)
-- [ ] Implement malware/content scanning for uploads
-- [ ] Implement signed URLs for private attachments (portfolio/gig media are public by design; this applies to order deliveries and dispute evidence, which arrive with orders in Phase 4)
+- [x] Implement malware/content scanning for uploads — `services/storage.go` `scanUpload` (added in Phase 8's fraud/security pass): EICAR signature check plus rejection of zip members with executable/script extensions
+- [x] Implement signed URLs for private attachments — landed with Phase 4's `OrderAttachment` work: private storage root outside the public `/media/` mount, served only after a buyer/seller/admin ownership check (not a signed-URL scheme per se, but the equivalent access-control guarantee)
 
 ### Catalog
 
 - [x] Seed starter categories and free-text seller-supplied tags
-- [ ] Implement admin `Category` and `Tag` management console (Phase 8)
+- [x] Implement admin `Category` and `Tag` management console — `/admin/categories` (`handlers/admin.go` `adminCategories`/`adminCategoryCreate`/`adminCategoryUpdate`/`adminCategoryDelete`/`adminTagRename`/`adminTagDelete`): full category CRUD plus a rename/delete console over seller-supplied free-text tags with gig-usage counts (`store.ListTagsWithUsage`)
 - [x] Implement `Gig` CRUD with slug generation and moderation state
 - [x] Implement `GigPackage` (price, delivery time, revisions, scope)
 - [x] Implement `GigAddon` (price, delivery impact, availability)
@@ -267,6 +267,7 @@ Explicitly out of scope for this pass (flagged rather than silently stubbed): ac
 ### Admin consoles
 
 - [x] Complete moderation dashboards (users, gigs, media, reviews, messages) — `handlers/admin.go`: `/admin/users` (search/filter + suspend/restore with a required reason), `/admin/moderation/gigs`, `/admin/moderation/media`, `/admin/moderation/reviews` (approve/reject queues filterable by state), `/admin/moderation/messages` (hide, filterable by order); every decision is audit-logged and CSRF-protected
+- [x] Complete `Category`/`Tag` admin console — `/admin/categories`, see Phase 3's Catalog section for detail
 - [x] Complete dispute resolution console with evidence and internal notes — `/admin/disputes` (open/resolved lists) and `/admin/disputes/{id}` (evidence attachment links, an admin-only internal-notes form separate from the buyer/seller-visible decision, and the existing resolve action)
 - [x] Complete payout and reconciliation dashboards — pre-existing `/admin/payouts` and `/admin/payments` from Phase 5/7 extended in this pass with a "Retry" button on dead-lettered jobs; not otherwise rebuilt
 - [x] Implement CSV report exports with sensitive-field access controls — `/admin/users/export.csv` and `/admin/audit/export.csv`, admin-role-gated (like every `/admin/*` route) and each export itself writes an `admin.export_csv` audit entry with the row count

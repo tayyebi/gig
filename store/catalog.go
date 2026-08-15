@@ -58,6 +58,46 @@ func (s *Store) ListCategories(ctx context.Context) ([]Category, error) {
 	return cats, rows.Err()
 }
 
+// CreateCategory inserts a new browse category, for the admin console.
+func (s *Store) CreateCategory(ctx context.Context, slug, name, description string, position int) (int64, error) {
+	var id int64
+	err := s.db.QueryRowContext(ctx,
+		`INSERT INTO categories (slug, name, description, position) VALUES ($1, $2, $3, $4) RETURNING id`,
+		slug, name, description, position,
+	).Scan(&id)
+	if err != nil {
+		return 0, fmt.Errorf("create category: %w", err)
+	}
+	return id, nil
+}
+
+// UpdateCategory edits an existing category's display fields.
+func (s *Store) UpdateCategory(ctx context.Context, id int64, name, description string, position int) error {
+	res, err := s.db.ExecContext(ctx,
+		`UPDATE categories SET name = $2, description = $3, position = $4 WHERE id = $1`,
+		id, name, description, position)
+	if err != nil {
+		return fmt.Errorf("update category %d: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// DeleteCategory removes a category. Gigs referencing it fall back to no
+// category (category_id ON DELETE SET NULL), never a dangling reference.
+func (s *Store) DeleteCategory(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM categories WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete category %d: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
 // GetCategoryBySlug looks up a category by its URL slug.
 func (s *Store) GetCategoryBySlug(ctx context.Context, slug string) (*Category, error) {
 	var c Category
@@ -526,6 +566,68 @@ func (s *Store) AddGigMedia(ctx context.Context, gigID int64, path, altText stri
 		return 0, fmt.Errorf("add gig media for gig %d: %w", gigID, err)
 	}
 	return id, nil
+}
+
+// TagWithUsage is a tag alongside how many gigs currently use it, for the
+// admin tag-management console (seller-supplied tags are free text, so this
+// is the admin's only view into what has accumulated).
+type TagWithUsage struct {
+	ID       int64
+	Slug     string
+	Name     string
+	GigCount int
+}
+
+// ListTagsWithUsage returns every tag and its gig count, most-used first.
+func (s *Store) ListTagsWithUsage(ctx context.Context) ([]TagWithUsage, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT t.id, t.slug, t.name, count(gt.gig_id)
+		FROM tags t
+		LEFT JOIN gig_tags gt ON gt.tag_id = t.id
+		GROUP BY t.id, t.slug, t.name
+		ORDER BY count(gt.gig_id) DESC, t.name`)
+	if err != nil {
+		return nil, fmt.Errorf("list tags with usage: %w", err)
+	}
+	defer rows.Close()
+	var out []TagWithUsage
+	for rows.Next() {
+		var tg TagWithUsage
+		if err := rows.Scan(&tg.ID, &tg.Slug, &tg.Name, &tg.GigCount); err != nil {
+			return nil, fmt.Errorf("scan tag with usage: %w", err)
+		}
+		out = append(out, tg)
+	}
+	return out, rows.Err()
+}
+
+// DeleteTag removes a tag entirely (cascading to gig_tags), for the admin
+// console to prune spam or duplicate seller-supplied tags.
+func (s *Store) DeleteTag(ctx context.Context, id int64) error {
+	res, err := s.db.ExecContext(ctx, `DELETE FROM tags WHERE id = $1`, id)
+	if err != nil {
+		return fmt.Errorf("delete tag %d: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
+}
+
+// RenameTag edits a tag's display name and re-derives its slug, for
+// consolidating near-duplicate seller-supplied tags. If the new slug
+// collides with an existing different tag, callers should catch the error
+// and tell the admin to delete one of the two instead.
+func (s *Store) RenameTag(ctx context.Context, id int64, name string) error {
+	slug := slugify(name)
+	res, err := s.db.ExecContext(ctx, `UPDATE tags SET name = $2, slug = $3 WHERE id = $1`, id, name, slug)
+	if err != nil {
+		return fmt.Errorf("rename tag %d: %w", id, err)
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrNotFound
+	}
+	return nil
 }
 
 // SetGigTags replaces a gig's tags from free-text names, upserting the tags
