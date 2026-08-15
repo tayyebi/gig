@@ -124,6 +124,49 @@ func TestHandlerSourceFormControlsHaveLabels(t *testing.T) {
 	}
 }
 
+// TestLayoutHasSingleLandmarkStructure covers the mechanically-checkable
+// slice of "verify semantic element usage": exactly one <main>, <header>,
+// and <footer> per rendered page is what lets a screen reader's landmark
+// navigation work at all — a duplicate or missing landmark is a real,
+// automatable defect, unlike subjective "minimal class usage" style
+// preferences, which is why this test exists and a generic class-count
+// linter does not.
+func TestLayoutHasSingleLandmarkStructure(t *testing.T) {
+	html, err := Layout(PageData{Title: "Test page", Body: "<p>hello</p>"})
+	if err != nil {
+		t.Fatalf("Layout: %v", err)
+	}
+	out := string(html)
+	for _, tag := range []string{"main", "header", "footer"} {
+		open := regexp.MustCompile(`(?i)<` + tag + `[\s>]`)
+		count := len(open.FindAllString(out, -1))
+		if count != 1 {
+			t.Errorf("rendered layout has %d <%s> element(s), want exactly 1", count, tag)
+		}
+	}
+}
+
+// TestTemplateTablesHaveHeaderStructure ensures every <table> in a
+// template has a <thead> and a <tbody> — a table without them still
+// renders visually but loses its exposed row/column header relationships
+// for assistive technology.
+func TestTemplateTablesHaveHeaderStructure(t *testing.T) {
+	walkTemplates(t, func(t *testing.T, path, body string) {
+		tableCount := strings.Count(strings.ToLower(body), "<table")
+		if tableCount == 0 {
+			return
+		}
+		theadCount := strings.Count(strings.ToLower(body), "<thead")
+		tbodyCount := strings.Count(strings.ToLower(body), "<tbody")
+		if theadCount < tableCount {
+			t.Errorf("%s: %d <table> element(s) but only %d <thead>", path, tableCount, theadCount)
+		}
+		if tbodyCount < tableCount {
+			t.Errorf("%s: %d <table> element(s) but only %d <tbody>", path, tableCount, tbodyCount)
+		}
+	})
+}
+
 func walkTemplates(t *testing.T, check func(t *testing.T, path, body string)) {
 	t.Helper()
 	entries, err := os.ReadDir("templates")
