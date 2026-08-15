@@ -227,6 +227,34 @@ func (s *Store) ListPayoutsByStatus(ctx context.Context, status string, limit in
 	return out, rows.Err()
 }
 
+// GetPayout returns one payout by ID, for the admin high-value alert check
+// on approval.
+func (s *Store) GetPayout(ctx context.Context, id int64) (*Payout, error) {
+	var p Payout
+	var reviewedBy sql.NullInt64
+	var executedAt sql.NullTime
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, seller_id, wallet_id, amount_minor, currency, network, asset, status, tx_hash, reviewed_by, created_at, executed_at, updated_at
+		FROM payouts WHERE id = $1`, id,
+	).Scan(&p.ID, &p.SellerID, &p.WalletID, &p.AmountMinor, &p.Currency, &p.Network, &p.Asset,
+		&p.Status, &p.TxHash, &reviewedBy, &p.CreatedAt, &executedAt, &p.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get payout %d: %w", id, err)
+	}
+	if reviewedBy.Valid {
+		v := reviewedBy.Int64
+		p.ReviewedBy = &v
+	}
+	if executedAt.Valid {
+		t := executedAt.Time
+		p.ExecutedAt = &t
+	}
+	return &p, nil
+}
+
 // TransitionPayout moves a payout between states, recording who reviewed it
 // and, on completion, the on-chain transaction hash the admin executed
 // manually (there is no automated treasury signing in this project's scope).

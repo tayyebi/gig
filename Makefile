@@ -1,6 +1,6 @@
 GO ?= go
 
-.PHONY: build run test lint vet fmt tidy up down logs psql migrate-fix favicon ci
+.PHONY: build run test lint vet fmt tidy up down logs psql migrate-fix favicon ci vulncheck
 
 build:
 	$(GO) build -o bin/gig .
@@ -40,5 +40,9 @@ psql:
 
 favicon:
 	python3 scripts/make-favicon.py static/favicon.ico
+
+vulncheck:
+	@command -v govulncheck >/dev/null 2>&1 || $(GO) install golang.org/x/vuln/cmd/govulncheck@latest
+	govulncheck ./...
 
 ci: fmt-check vet build test

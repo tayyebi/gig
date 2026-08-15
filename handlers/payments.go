@@ -661,6 +661,10 @@ func (s *Server) adminPayoutApprove(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.audit(r.Context(), &admin.ID, r, "payout.approved", "payout", strconv.FormatInt(id, 10), nil)
+	if payout, err := s.Store.GetPayout(r.Context(), id); err == nil && services.IsHighValue(payout.AmountMinor) {
+		s.audit(r.Context(), nil, r, "fraud.high_value_alert", "payout", strconv.FormatInt(id, 10),
+			map[string]any{"seller_id": payout.SellerID, "amount_minor_units": payout.AmountMinor, "currency": payout.Currency})
+	}
 	http.Redirect(w, r, "/admin/payouts", http.StatusSeeOther)
 }
 

@@ -223,6 +223,18 @@ func (s *Store) listOrders(ctx context.Context, query string, id int64, page, pe
 // changed (racing update, or the caller's view of `from` was stale). Callers
 // must first check services.CanTransitionOrder(from, to); this only re-checks
 // the current row still matches, it does not consult the transition table.
+// CountRecentOrdersByBuyer returns how many orders a buyer has created in
+// the given trailing window, for the fraud service's order-velocity rule
+// (services/fraud.go).
+func (s *Store) CountRecentOrdersByBuyer(ctx context.Context, buyerID int64, since time.Time) (int, error) {
+	var n int
+	err := s.db.QueryRowContext(ctx, `SELECT count(*) FROM orders WHERE buyer_id = $1 AND created_at >= $2`, buyerID, since).Scan(&n)
+	if err != nil {
+		return 0, fmt.Errorf("count recent orders for buyer %d: %w", buyerID, err)
+	}
+	return n, nil
+}
+
 func (s *Store) TransitionOrder(ctx context.Context, orderID int64, from, to string) error {
 	res, err := s.db.ExecContext(ctx, `
 		UPDATE orders SET

@@ -182,6 +182,7 @@ func (s *Server) confirmWallet(w http.ResponseWriter, r *http.Request) {
 		s.Log.Error("use wallet confirmation token", "token_id", tok.ID, "error", err)
 	}
 	s.audit(r.Context(), &tok.UserID, r, "wallet.confirmed", "seller_wallet", strconv.FormatInt(walletID, 10), nil)
+	s.alertWalletChange(r, tok.UserID, walletID, wallet.Network, wallet.Asset)
 	s.flashNotice(r, fmt.Sprintf("Wallet confirmed. It becomes payout-eligible after %s.", s.Cfg.WalletChangeCooldown.String()))
 	http.Redirect(w, r, "/sell/wallet", http.StatusSeeOther)
 }

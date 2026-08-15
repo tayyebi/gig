@@ -1,6 +1,8 @@
 package services
 
 import (
+	"archive/zip"
+	"bytes"
 	"crypto/rand"
 	"encoding/hex"
 	"errors"
@@ -10,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // ErrUnsupportedMediaType is returned when an upload's sniffed content type
@@ -18,6 +21,27 @@ var ErrUnsupportedMediaType = errors.New("unsupported file type")
 
 // ErrFileTooLarge is returned when an upload exceeds the configured limit.
 var ErrFileTooLarge = errors.New("file exceeds the maximum upload size")
+
+// ErrSuspiciousContent is returned when a lightweight signature/extension
+// scan flags an upload. This is not malware scanning against a real AV
+// engine (TODO.md Phase 3 explicitly defers that, and PLAN.md's hard
+// constraints keep the stack dependency-light); it catches the cheap,
+// common cases: a classic AV-test signature, and archive members whose
+// names carry an executable/script extension.
+var ErrSuspiciousContent = errors.New("upload flagged by content scan")
+
+// eicarSignature is the standard antivirus test string
+// (https://www.eicar.org/download-anti-malware-testfile/). Any file
+// containing it is rejected; it is inert but a reliable, dependency-free
+// smoke test that the scan path actually runs.
+const eicarSignature = `X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*`
+
+// dangerousArchiveExtensions are executable/script extensions that should
+// never appear inside an uploaded zip archive (deliveries, portfolio zips).
+var dangerousArchiveExtensions = []string{
+	".exe", ".dll", ".so", ".dylib", ".bat", ".cmd", ".com", ".scr",
+	".ps1", ".sh", ".js", ".jar", ".msi", ".vbs", ".apk",
+}
 
 // allowedImageTypes maps sniffed content types to a safe file extension.
 // Portfolio and gig media are images only.
@@ -100,12 +124,44 @@ func (st *Storage) save(subdir string, file multipart.File, header *multipart.Fi
 	if err != nil {
 		return "", fmt.Errorf("create upload file: %w", err)
 	}
-	defer dst.Close()
-	if _, err := io.Copy(dst, io.LimitReader(file, st.MaxBytes)); err != nil {
+	written, copyErr := io.Copy(dst, io.LimitReader(file, st.MaxBytes))
+	dst.Close()
+	if copyErr != nil {
 		os.Remove(absPath)
-		return "", fmt.Errorf("write upload file: %w", err)
+		return "", fmt.Errorf("write upload file: %w", copyErr)
+	}
+
+	if err := scanUpload(absPath, written); err != nil {
+		os.Remove(absPath)
+		return "", err
 	}
 	return relPath, nil
+}
+
+// scanUpload runs the lightweight signature/extension checks described on
+// ErrSuspiciousContent against the file just written to disk. It re-reads
+// the file (bounded by MaxBytes, already enforced above) rather than the
+// original multipart reader, since the zip check needs random access that
+// an io.Reader over the wire does not offer.
+func scanUpload(absPath string, size int64) error {
+	data, err := os.ReadFile(absPath)
+	if err != nil {
+		return fmt.Errorf("read upload for scan: %w", err)
+	}
+	if bytes.Contains(data, []byte(eicarSignature)) {
+		return ErrSuspiciousContent
+	}
+	if zr, err := zip.NewReader(bytes.NewReader(data), size); err == nil {
+		for _, f := range zr.File {
+			name := strings.ToLower(f.Name)
+			for _, ext := range dangerousArchiveExtensions {
+				if strings.HasSuffix(name, ext) {
+					return ErrSuspiciousContent
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func randomFilename(ext string) (string, error) {

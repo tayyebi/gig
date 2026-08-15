@@ -274,12 +274,12 @@ Explicitly out of scope for this pass (flagged rather than silently stubbed): ac
 
 ### Fraud and security
 
-- [ ] Implement velocity and suspicious-order-pattern rules
-- [ ] Implement chargeback and high-value transaction alerts
-- [ ] Implement wallet-change alerts and cooldowns
-- [ ] Implement file scanning and size/type limits
-- [ ] Add data redaction for payment and identity fields in logs
-- [ ] Run dependency and container vulnerability scanning
+- [x] Implement velocity and suspicious-order-pattern rules — `services/fraud.go` `IsVelocitySuspicious` (pure threshold check, unit tested); `handlers/fraud.go` `checkFraudSignals` queries `store.CountRecentOrdersByBuyer` on every checkout confirm and audit-logs a `fraud.velocity_alert` (visible on `/admin/audit`) when a buyer exceeds 5 orders/hour — a review signal, not a hard block
+- [x] Implement chargeback and high-value transaction alerts — `services.IsHighValue` (>= $2,000 minor units by default) checked on order creation (`fraud.high_value_alert`) and on payout approval (`handlers/payments.go` `adminPayoutApprove`); no Stripe dispute/chargeback webhook parsing yet (Phase 5 note: "dispute and payout webhook types are still not parsed"), so chargeback-specific alerting is not wired to a real chargeback event
+- [x] Implement wallet-change alerts and cooldowns — cooldown already existed (Phase 7); `handlers/fraud.go` `alertWalletChange` now also audit-logs a `fraud.wallet_change_alert` on every confirmed wallet change, independent of the cooldown gate
+- [x] Implement file scanning and size/type limits — content-type sniffing and size caps already existed (Phase 3); `services/storage.go` `scanUpload` adds a lightweight signature check (EICAR test string) and rejects zip archive members with executable/script extensions, per TODO.md's explicit note that a full AV integration is out of scope
+- [x] Add data redaction for payment and identity fields in logs — `logger.go` `redactAttr`, a `slog.HandlerOptions.ReplaceAttr` that masks any attribute key containing a sensitive substring (password, secret, token, card, wallet address, email, etc.) at any nesting depth, applied globally to both the web and worker loggers
+- [x] Run dependency and container vulnerability scanning — `make vulncheck` (installs and runs `govulncheck`) and a new `Vulnerability scan` step in `.github/workflows/ci.yml`; container image scanning (e.g. Trivy against the built Docker image) is not set up
 
 ### Reliability and performance
 

@@ -43,3 +43,7 @@ jobs:
         env:
           TEST_DATABASE_URL: postgres://gig:gig@localhost:5432/gig_test?sslmode=disable
         run: go test ./store/... -count=1
+      - name: Vulnerability scan
+        run: |
+          go install golang.org/x/vuln/cmd/govulncheck@latest
+          govulncheck ./...
