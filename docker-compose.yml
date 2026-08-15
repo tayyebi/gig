@@ -6,7 +6,8 @@ services:
       POSTGRES_PASSWORD: gig-dev-password
       POSTGRES_DB: gig
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # Bind-mounted to the host so data persists outside Docker's storage.
+      - ./.docker/pgdata:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U gig -d gig"]
       interval: 2s
@@ -30,17 +31,26 @@ services:
       DATABASE_URL: "postgres://gig:gig-dev-password@db:5432/gig?sslmode=disable"
       SESSION_SECRET: "dev-only-session-secret-0123456789abcdef"
       CSRF_SECRET: "dev-only-csrf-secret-0123456789abcdef"
-      STORAGE_DIR: "/app/data"
-      PRIVATE_STORAGE_DIR: "/app/data-private"
+      STORAGE_DIR: "/data"
+      PRIVATE_STORAGE_DIR: "/data-private"
       JOB_CONCURRENCY: "4"
+      GOCACHE: "/gocache"
+      GOMODCACHE: "/gomodcache"
+      BIN_PATH: "/hostbin/gig"
     depends_on:
       db:
         condition: service_healthy
     ports:
       - "127.0.0.1:8090:8080"
     volumes:
-      - appdata:/app/data
-      - appdata-private:/app/data-private
+      # Source, tooling caches, compiled binary, and app data all live on
+      # the host — the container contributes nothing but the Go runtime.
+      - .:/app
+      - ./.docker/gocache:/gocache
+      - ./.docker/gomodcache:/gomodcache
+      - ./.docker/bin:/hostbin
+      - ./.docker/data:/data
+      - ./.docker/data-private:/data-private
     networks:
       - internal
 
@@ -49,19 +59,19 @@ services:
     environment:
       <<: *app_env
       APP_ROLE: worker
+      BIN_PATH: "/hostbin/gig-worker"
     depends_on:
       db:
         condition: service_healthy
     volumes:
-      - appdata:/app/data
-      - appdata-private:/app/data-private
+      - .:/app
+      - ./.docker/gocache:/gocache
+      - ./.docker/gomodcache:/gomodcache
+      - ./.docker/bin:/hostbin
+      - ./.docker/data:/data
+      - ./.docker/data-private:/data-private
     networks:
       - internal
-
-volumes:
-  pgdata:
-  appdata:
-  appdata-private:
 
 networks:
   # Internal bridge with no default external exposure.

@@ -16,6 +16,10 @@ coverage.out
 /data/
 /data-private/
 
+# Host-persisted docker build/runtime state (go caches, compiled binaries,
+# app data, postgres data) — everything docker-compose bind-mounts in.
+/.docker/
+
 # Logs
 *.log
 

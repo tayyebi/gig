@@ -1,27 +1,17 @@
 # syntax=docker/dockerfile:1
+#
+# Runtime-only image: just the Go toolchain and CA certs. No source, no
+# module cache, no compiled binary is baked in — all of that lives on
+# host-bind-mounted volumes (see docker-compose.yml / .docker/) so it
+# persists across container rebuilds and stays out of the image entirely.
+FROM golang:1.26-alpine
 
-# --- Build stage ---
-FROM golang:1.26-alpine AS build
+RUN apk add --no-cache ca-certificates tzdata git
 
-WORKDIR /src
-
-COPY go.mod go.sum ./
-RUN go mod download
-
-COPY . .
-RUN CGO_ENABLED=0 go build -trimpath -ldflags="-s -w" -o /out/gig .
-
-# --- Runtime stage ---
-FROM alpine:3.21
-
-RUN apk add --no-cache ca-certificates tzdata \
-    && addgroup -S -g 10001 gig \
-    && adduser -S -D -H -u 10001 -G gig gig
+COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+RUN chmod +x /usr/local/bin/entrypoint.sh
 
 WORKDIR /app
-COPY --from=build /out/gig /app/gig
-
-USER gig
 EXPOSE 8080
 
-ENTRYPOINT ["/app/gig"]
+ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]
