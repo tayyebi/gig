@@ -227,6 +227,38 @@ func (s *Store) ListPayoutsByStatus(ctx context.Context, status string, limit in
 	return out, rows.Err()
 }
 
+// ListPayoutsBySeller returns a seller's own payouts, most recent first, for
+// the seller-facing payout request/history page.
+func (s *Store) ListPayoutsBySeller(ctx context.Context, sellerID int64, limit int) ([]Payout, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, seller_id, wallet_id, amount_minor, currency, network, asset, status, tx_hash, reviewed_by, created_at, executed_at, updated_at
+		FROM payouts WHERE seller_id = $1 ORDER BY created_at DESC LIMIT $2`, sellerID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list payouts for seller %d: %w", sellerID, err)
+	}
+	defer rows.Close()
+	var out []Payout
+	for rows.Next() {
+		var p Payout
+		var reviewedBy sql.NullInt64
+		var executedAt sql.NullTime
+		if err := rows.Scan(&p.ID, &p.SellerID, &p.WalletID, &p.AmountMinor, &p.Currency, &p.Network, &p.Asset,
+			&p.Status, &p.TxHash, &reviewedBy, &p.CreatedAt, &executedAt, &p.UpdatedAt); err != nil {
+			return nil, fmt.Errorf("scan payout: %w", err)
+		}
+		if reviewedBy.Valid {
+			v := reviewedBy.Int64
+			p.ReviewedBy = &v
+		}
+		if executedAt.Valid {
+			t := executedAt.Time
+			p.ExecutedAt = &t
+		}
+		out = append(out, p)
+	}
+	return out, rows.Err()
+}
+
 // GetPayout returns one payout by ID, for the admin high-value alert check
 // on approval.
 func (s *Store) GetPayout(ctx context.Context, id int64) (*Payout, error) {

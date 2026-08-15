@@ -163,3 +163,53 @@ func TestConcurrentTransitionPayoutOnlyOneWinner(t *testing.T) {
 		t.Fatalf("final payout status = %q, want ready_for_manual_execution", final.Status)
 	}
 }
+
+// TestListPayoutsBySeller covers the seller-facing payout request/history
+// page: it must return only the requesting seller's own payouts, not
+// another seller's, most recent first.
+func TestListPayoutsBySeller(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	sellerA := insertTestUser(t, st, "payout-list-a")
+	sellerB := insertTestUser(t, st, "payout-list-b")
+	fpA := fmt.Sprintf("fp-a-%d", time.Now().UnixNano())
+	fpB := fmt.Sprintf("fp-b-%d", time.Now().UnixNano())
+	walletA, err := st.CreatePendingWallet(ctx, sellerA, "base", "usdc", []byte("cipher"), fpA)
+	if err != nil {
+		t.Fatalf("CreatePendingWallet A: %v", err)
+	}
+	walletB, err := st.CreatePendingWallet(ctx, sellerB, "base", "usdc", []byte("cipher"), fpB)
+	if err != nil {
+		t.Fatalf("CreatePendingWallet B: %v", err)
+	}
+
+	payoutA1, err := st.CreatePayout(ctx, sellerA, walletA, 1000, "USD", "base", "usdc", PayoutQueued)
+	if err != nil {
+		t.Fatalf("CreatePayout A1: %v", err)
+	}
+	payoutA2, err := st.CreatePayout(ctx, sellerA, walletA, 2000, "USD", "base", "usdc", PayoutQueued)
+	if err != nil {
+		t.Fatalf("CreatePayout A2: %v", err)
+	}
+	if _, err := st.CreatePayout(ctx, sellerB, walletB, 3000, "USD", "base", "usdc", PayoutQueued); err != nil {
+		t.Fatalf("CreatePayout B: %v", err)
+	}
+
+	got, err := st.ListPayoutsBySeller(ctx, sellerA, 10)
+	if err != nil {
+		t.Fatalf("ListPayoutsBySeller: %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("ListPayoutsBySeller returned %d rows, want 2", len(got))
+	}
+	ids := map[int64]bool{got[0].ID: true, got[1].ID: true}
+	if !ids[payoutA1] || !ids[payoutA2] {
+		t.Fatalf("ListPayoutsBySeller returned %v, want %d and %d", ids, payoutA1, payoutA2)
+	}
+	for _, p := range got {
+		if p.SellerID != sellerA {
+			t.Fatalf("ListPayoutsBySeller leaked payout %d for seller %d into seller %d's list", p.ID, p.SellerID, sellerA)
+		}
+	}
+}

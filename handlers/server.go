@@ -197,6 +197,8 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /sell/wallet", s.requireSeller(s.walletSettings))
 	mux.HandleFunc("POST /sell/wallet", s.requireSeller(s.submitWallet))
 	mux.HandleFunc("GET /sell/wallet/confirm", s.requireAuth(s.confirmWallet))
+	mux.HandleFunc("GET /sell/payouts", s.requireSeller(s.payoutRequestForm))
+	mux.HandleFunc("POST /sell/payouts/request", s.requireSeller(s.submitPayoutRequest))
 
 	return mux
 }
