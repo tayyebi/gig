@@ -10,9 +10,12 @@
   --color-primary: #4f46e5;
   --color-primary-dark: #4338ca;
   --color-on-primary: #ffffff;
-  --color-danger: #dc2626;
+  /* Darkened from the more common #dc2626/#16a34a Tailwind-ish defaults:
+     those fail WCAG AA (4.5:1) as text against their own -bg pair, caught
+     by TestColorContrastMeetsWCAG_AA. */
+  --color-danger: #b91c1c;
   --color-danger-bg: #fef2f2;
-  --color-success: #16a34a;
+  --color-success: #15803d;
   --color-success-bg: #f0fdf4;
   --color-info-bg: #eff6ff;
 
