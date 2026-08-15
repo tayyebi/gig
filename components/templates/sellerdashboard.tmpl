@@ -34,6 +34,20 @@
   {{end}}
   {{end}}
 
+  <h2>Earnings</h2>
+  {{if .Earnings}}
+  <table>
+    <thead><tr><th scope="col">Balance</th><th scope="col">Amount</th></tr></thead>
+    <tbody>
+    {{range .Earnings}}
+      <tr><td>{{.Label}}</td><td>{{.Amount}} {{.Currency}}</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  {{else}}
+  <p class="muted">No earnings yet.</p>
+  {{end}}
+
   <p>
     <a class="btn" href="/sell/profile">Edit public profile</a>
     <a class="btn" href="/sell/portfolio">Manage portfolio</a>

@@ -13,6 +13,16 @@ type SellerDashboardData struct {
 	StripePayoutsReady bool
 	Gigs               []SellerGigRow
 	RecentOrders       []OrderRow
+	Earnings           []EarningsBalance
+}
+
+// EarningsBalance is one ledger balance shown on the seller dashboard, e.g.
+// "seller_pending: $120.00 USD".
+type EarningsBalance struct {
+	Kind     string // "seller_pending" | "seller_available"
+	Label    string
+	Currency string
+	Amount   string // pre-formatted, e.g. "120.00"
 }
 
 // SellerGigRow is one row in a seller's gig list.

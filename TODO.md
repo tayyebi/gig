@@ -128,12 +128,12 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 - [x] Implement featured gigs section
 - [x] Build public gig detail page with packages and add-ons
 - [x] Build public rating display (shows "No reviews yet" until Phase 4 reviews exist)
-- [ ] Build seller earnings summary (depends on Phase 5 payments/ledger)
+- [x] Build seller earnings summary — `sellDashboard` now renders `store.SellerBalances` (pending/available, per currency) via a new `Earnings` table on the seller dashboard template
 
 ### Dashboards
 
 - [x] Build buyer dashboard (favorites; orders and messages are explicit placeholders until Phase 4)
-- [x] Build seller dashboard (gigs; earnings, orders, and payout status are explicit placeholders until Phase 5)
+- [x] Build seller dashboard (gigs, orders, payout status, and — since the later phases landed — real earnings and payout data)
 - [x] Add empty states and actionable errors to all dashboards
 
 ## Phase 4: Orders and Messaging

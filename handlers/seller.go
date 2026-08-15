@@ -107,6 +107,29 @@ func (s *Server) sellDashboard(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, err)
 		return
 	}
+
+	balances, err := s.Store.SellerBalances(r.Context(), u.ID)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	earnings := make([]components.EarningsBalance, 0, len(balances))
+	for _, b := range balances {
+		label := b.Kind
+		switch b.Kind {
+		case "seller_pending":
+			label = "Pending (not yet released)"
+		case "seller_available":
+			label = "Available"
+		}
+		earnings = append(earnings, components.EarningsBalance{
+			Kind:     b.Kind,
+			Label:    label,
+			Currency: b.Currency,
+			Amount:   fmt.Sprintf("%.2f", float64(b.BalanceMinor)/100),
+		})
+	}
+
 	body, err := components.SellerDashboardPage(components.SellerDashboardData{
 		CSRF:               sess.CSRF,
 		OnboardingState:    onboardingLabel(onboarding.KYCState),
@@ -117,6 +140,7 @@ func (s *Server) sellDashboard(w http.ResponseWriter, r *http.Request) {
 		StripePayoutsReady: onboarding.PayoutsEnabled,
 		Gigs:               rows,
 		RecentOrders:       toOrderRows(recentOrders),
+		Earnings:           earnings,
 	})
 	if err != nil {
 		s.renderError(w, err)
