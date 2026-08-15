@@ -21,7 +21,8 @@ type Options struct {
 	Log       *slog.Logger
 	Cfg       *config.Config
 	Mailer    services.Mailer
-	Providers providers.Registry // empty disables checkout when Cfg.PaymentsEnabled is false
+	Providers providers.Registry     // empty disables checkout when Cfg.PaymentsEnabled is false
+	Wallet    *services.WalletCrypto // nil disables wallet payout features when WALLET_ENCRYPTION_KEY is unset
 }
 
 // Server holds shared dependencies for all handlers.
@@ -33,6 +34,7 @@ type Server struct {
 	Storage        *services.Storage
 	PrivateStorage *services.Storage
 	Providers      providers.Registry
+	Wallet         *services.WalletCrypto
 	limiter        *services.RateLimiter
 }
 
@@ -53,6 +55,7 @@ func New(opts Options) *Server {
 		Storage:        services.NewStorage(opts.Cfg.StorageDir, opts.Cfg.UploadMaxBytes),
 		PrivateStorage: services.NewStorage(opts.Cfg.PrivateStorageDir, opts.Cfg.UploadMaxBytes),
 		Providers:      opts.Providers,
+		Wallet:         opts.Wallet,
 		limiter:        services.NewRateLimiter(opts.Cfg.AuthRateLimit, opts.Cfg.AuthRateWindow),
 	}
 }
@@ -95,7 +98,12 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("GET /admin/payments", s.requireRole(store.RoleAdmin, s.adminPayments))
 	mux.HandleFunc("GET /admin/orders/{id}/payments", s.requireRole(store.RoleAdmin, s.adminOrderPayments))
 	mux.HandleFunc("GET /orders/{id}/pay/btcpay-status", s.requireAuth(s.btcpayInvoiceStatus))
+	mux.HandleFunc("GET /orders/{id}/pay/evm-status", s.requireAuth(s.evmDepositStatus))
 	mux.HandleFunc("POST /admin/orders/{id}/refund", s.requireRole(store.RoleAdmin, s.adminOrderRefund))
+	mux.HandleFunc("GET /admin/payouts", s.requireRole(store.RoleAdmin, s.adminPayouts))
+	mux.HandleFunc("POST /admin/payouts/pause", s.requireRole(store.RoleAdmin, s.adminPayoutsPause))
+	mux.HandleFunc("POST /admin/payouts/{id}/approve", s.requireRole(store.RoleAdmin, s.adminPayoutApprove))
+	mux.HandleFunc("POST /admin/payouts/{id}/complete", s.requireRole(store.RoleAdmin, s.adminPayoutComplete))
 
 	// Public catalog.
 	mux.HandleFunc("GET /browse", s.browseCategories)
@@ -157,6 +165,9 @@ func (s *Server) Routes() *http.ServeMux {
 	mux.HandleFunc("POST /sell/gigs/{id}", s.requireSeller(s.sellGigUpdate))
 	mux.HandleFunc("POST /sell/gigs/{id}/status", s.requireSeller(s.sellGigStatus))
 	mux.HandleFunc("POST /sell/gigs/{id}/media", s.requireSeller(s.sellGigMedia))
+	mux.HandleFunc("GET /sell/wallet", s.requireSeller(s.walletSettings))
+	mux.HandleFunc("POST /sell/wallet", s.requireSeller(s.submitWallet))
+	mux.HandleFunc("GET /sell/wallet/confirm", s.requireAuth(s.confirmWallet))
 
 	return mux
 }

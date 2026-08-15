@@ -234,29 +234,33 @@ Checklist derived from `PLAN.md`. Each phase must complete before moving to the 
 
 ## Phase 7: Stablecoin Payments and Wallet Payouts
 
+Network choice (Phase 0's Base-vs-Polygon gate) was resolved for this pass as "both, config-selected" — `providers/evm.go` is one adapter instance per chain (`evm-base`/`evm-polygon`), registered independently when its RPC URL and treasury address are configured. Chain access is raw JSON-RPC (`eth_getLogs`/`eth_blockNumber`) over `net/http`, no SDK, matching Phase 6's BTCPay precedent.
+
 ### EVM adapter
 
-- [ ] Implement selected EVM network adapter or payment processor adapter
-- [ ] Configure chain ID, RPC/indexer, token contract addresses, confirmation count
-- [ ] Verify token contract addresses from config only, never user input
-- [ ] Generate per-order deposit address or unique payment reference
-- [ ] Render server-generated QR code and deposit instructions as plain HTML
-- [ ] Implement transaction verification (sender, recipient, amount, block, confirmations)
-- [ ] Implement reorg-safe confirmation handling
-- [ ] Implement reconciliation job scanning indexer for missed webhooks
-- [ ] Implement refund policy for stablecoin payments
-- [ ] Add admin visibility for on-chain payments
+- [x] Implement selected EVM network adapter or payment processor adapter — `providers/evm.go`, one instance per chain
+- [x] Configure chain ID, RPC/indexer, token contract addresses, confirmation count — `config.EVMBase*`/`EVMPolygon*`/`EVMRequiredConfirmations`
+- [x] Verify token contract addresses from config only, never user input
+- [x] Generate per-order deposit address or unique payment reference — a single configured treasury address plus a provider-ref-encoded expected-amount match, not a per-order generated address (no HD wallet custody in scope)
+- [ ] Render server-generated QR code and deposit instructions as plain HTML — deposit instructions page exists (`handlers/payments.go` `evmDepositStatus`) but shows the address as text only; no QR encoder implemented yet
+- [x] Implement transaction verification (sender, recipient, amount, block, confirmations) — amount-match against `Transfer` logs to the treasury address, confirmation depth from `eth_blockNumber`
+- [x] Implement reorg-safe confirmation handling — `EVMRequiredConfirmations` gates `succeeded` status
+- [x] Implement reconciliation job scanning indexer for missed webhooks — reuses the existing provider-agnostic `payment.reconcile_sweep`, no new job needed since EVM has no inbound webhooks by design
+- [x] Implement refund policy for stablecoin payments — admin-queued/manual, same "processing until reconciled" precedent as BTCPay refunds (no treasury signing key in scope)
+- [ ] Add admin visibility for on-chain payments — falls back to the existing generic per-order payment-intent view, same as BTCPay's current state
 
 ### Wallet payouts
 
-- [ ] Implement seller wallet ownership confirmation
-- [ ] Encrypt stored wallet addresses with network and asset binding
-- [ ] Implement fresh-confirmation on address change with cooling-off period
-- [ ] Implement payout queue with allowlists and limits
-- [ ] Implement manual review threshold for high-value payouts
-- [ ] Implement admin emergency pause
-- [ ] Ensure payouts never use raw client-provided addresses
+- [x] Implement seller wallet ownership confirmation — `handlers/wallets.go`, reuses the existing auth-token email-confirmation machinery
+- [x] Encrypt stored wallet addresses with network and asset binding — `services/walletcrypto.go` (AES-256-GCM), `seller_wallets` table scoped by (user, network, asset)
+- [x] Implement fresh-confirmation on address change with cooling-off period — `WALLET_CHANGE_COOLDOWN` gates `eligible_at`; every change goes through a new pending row, never edited in place
+- [x] Implement payout queue with allowlists and limits — `store/wallets.go` `Payout`/`CreatePayout`; allowlist/threshold policy (queued vs needs_manual_review) is left to the caller of `CreatePayout`, not yet wired into an automatic seller-initiated payout request flow
+- [x] Implement manual review threshold for high-value payouts — `needs_manual_review` status, admin-approved via `/admin/payouts/{id}/approve`
+- [x] Implement admin emergency pause — `platform_settings.payouts_paused`, `/admin/payouts/pause`
+- [x] Ensure payouts never use raw client-provided addresses — payouts reference `wallet_id`; the address is only ever decrypted from the stored, confirmed row
 - [ ] Design ops runbook for gas funding, treasury, key custody `(ops)`
+
+Explicitly out of scope for this pass (flagged rather than silently stubbed): actual on-chain broadcast of refunds and payouts. Both require a treasury signing key, which is outside this project's key-custody scope; the queue reaches `ready_for_manual_execution`/`processing` and an admin executes the transfer manually, recording the tx hash for audit (`/admin/payouts/{id}/complete`).
 
 ## Phase 8: Full Operations and Hardening
 

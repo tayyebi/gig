@@ -180,4 +180,3 @@ func TestSellerGigLifecycleEndToEnd(t *testing.T) {
 		t.Fatalf("buyer dashboard = %d, body=%s", rec.Code, rec.Body.String())
 	}
 }
-

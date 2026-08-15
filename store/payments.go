@@ -11,23 +11,23 @@ import (
 // PaymentIntent tracks one attempt to collect payment for an order via a
 // provider (PLAN.md section 7, "Payments and Accounting").
 type PaymentIntent struct {
-	ID              int64
-	OrderID         int64
-	Provider        string
-	ProviderRef     string
-	ChargeRef       string
-	Method          string
-	Status          string
-	AmountMinor     int64
-	Currency        string
-	IdempotencyKey  string
-	CheckoutURL     string
-	ExpiresAt       *time.Time
-	SucceededAt     *time.Time
-	FailedAt        *time.Time
-	CanceledAt      *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID             int64
+	OrderID        int64
+	Provider       string
+	ProviderRef    string
+	ChargeRef      string
+	Method         string
+	Status         string
+	AmountMinor    int64
+	Currency       string
+	IdempotencyKey string
+	CheckoutURL    string
+	ExpiresAt      *time.Time
+	SucceededAt    *time.Time
+	FailedAt       *time.Time
+	CanceledAt     *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 const paymentIntentColumns = `id, order_id, provider, provider_ref, charge_ref, method, status, amount_minor_units, currency,

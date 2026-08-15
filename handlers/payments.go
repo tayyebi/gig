@@ -40,6 +40,10 @@ func paymentMethodProvider(method string) string {
 	switch method {
 	case "bitcoin", "lightning":
 		return "btcpay"
+	case "usdc-base", "usdt-base":
+		return "evm-base"
+	case "usdc-polygon", "usdt-polygon":
+		return "evm-polygon"
 	default:
 		return "stripe"
 	}
@@ -177,6 +181,62 @@ func (s *Server) btcpayInvoiceStatus(w http.ResponseWriter, r *http.Request) {
 	p := pageWithRawBody("Bitcoin / Lightning payment", body)
 	p.MetaRefresh = 5
 	s.render(w, r, http.StatusOK, p)
+}
+
+// evmDepositStatus is a zero-JavaScript polling page for an EVM stablecoin
+// deposit: it shows the treasury deposit address and expected amount, and
+// meta-refreshes while the reconciliation sweep (payments.go, root package)
+// watches the chain for a matching transfer, mirroring btcpayInvoiceStatus.
+func (s *Server) evmDepositStatus(w http.ResponseWriter, r *http.Request) {
+	access, ok := s.loadOrderAccess(w, r)
+	if !ok {
+		return
+	}
+	intent, err := s.Store.LatestPaymentIntentForOrder(r.Context(), access.Order.ID)
+	if err != nil {
+		http.Redirect(w, r, fmt.Sprintf("/orders/%d", access.Order.ID), http.StatusSeeOther)
+		return
+	}
+	if !strings.HasPrefix(intent.Provider, "evm-") || intent.Status == services.PaymentSucceeded ||
+		intent.Status == services.PaymentFailed || intent.Status == services.PaymentExpired || intent.Status == services.PaymentCanceled {
+		http.Redirect(w, r, fmt.Sprintf("/orders/%d", access.Order.ID), http.StatusSeeOther)
+		return
+	}
+	ep, ok := s.evmProvider(intent.Provider)
+	if !ok {
+		http.Redirect(w, r, fmt.Sprintf("/orders/%d", access.Order.ID), http.StatusSeeOther)
+		return
+	}
+
+	statusText := "waiting for deposit"
+	if intent.Status == services.PaymentProcessing {
+		statusText = "deposit detected, waiting for confirmations"
+	}
+	currency := strings.ToUpper(intent.Currency)
+	body := fmt.Sprintf(`<section class="container">
+<h1>Stablecoin deposit</h1>
+<p>Status: %s</p>
+<p>Send exactly <strong>%s</strong> worth of USDC to this address on %s:</p>
+<p><code>%s</code></p>
+<p class="help">This page refreshes automatically. Once the transfer reaches %d confirmations, order #%d will move to in progress. Send only from a wallet you control, and only this exact amount &mdash; the platform cannot distinguish deposits by any other means.</p>
+<p><a href="/orders/%d">Back to order</a></p>
+</section>`, html.EscapeString(statusText), html.EscapeString(formatMoney(intent.AmountMinor, currency)),
+		html.EscapeString(ep.ChainName), html.EscapeString(ep.TreasuryAddress), ep.RequiredConfirmations, access.Order.ID, access.Order.ID)
+
+	p := pageWithRawBody("Stablecoin deposit", body)
+	p.MetaRefresh = 5
+	s.render(w, r, http.StatusOK, p)
+}
+
+// evmProvider narrows a registered "evm-*" provider name to the EVM
+// adapter, for the deposit status page above.
+func (s *Server) evmProvider(name string) (*providers.EVM, bool) {
+	p, ok := s.Providers.Get(name)
+	if !ok {
+		return nil, false
+	}
+	ep, ok := p.(*providers.EVM)
+	return ep, ok
 }
 
 // stripeProvider narrows the registered "stripe" provider to the Stripe
@@ -437,6 +497,120 @@ func (s *Server) adminOrderPayments(w http.ResponseWriter, r *http.Request) {
 	}
 	sb.WriteString(`</section>`)
 	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - order payments", sb.String()))
+}
+
+// adminPayouts lists queued and manual-review payouts, and the emergency
+// pause toggle. Actual on-chain broadcast is out of this project's key
+// custody scope: an admin marks a "ready_for_manual_execution" payout
+// completed with the transaction hash after sending it manually, the same
+// way BTCPay refunds are admin-visible rather than fully automated.
+func (s *Server) adminPayouts(w http.ResponseWriter, r *http.Request) {
+	paused, err := s.Store.PayoutsPaused(r.Context())
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	var sb strings.Builder
+	sb.WriteString("<section class=\"container\"><h1>Payouts</h1>")
+	pauseLabel, pauseAction := "Pause payouts", "pause"
+	if paused {
+		sb.WriteString("<p><strong>Payouts are paused.</strong></p>")
+		pauseLabel, pauseAction = "Resume payouts", "resume"
+	}
+	sb.WriteString(fmt.Sprintf(`<form method="post" action="/admin/payouts/pause" novalidate>
+%s<input type="hidden" name="action" value="%s"><button class="btn" type="submit">%s</button></form>`,
+		csrfInputHTML(s.csrfFor(r)), pauseAction, html.EscapeString(pauseLabel)))
+
+	for _, status := range []string{store.PayoutNeedsManualReview, store.PayoutReadyForManualExecution, store.PayoutQueued} {
+		payouts, err := s.Store.ListPayoutsByStatus(r.Context(), status, 50)
+		if err != nil {
+			s.renderError(w, err)
+			return
+		}
+		sb.WriteString(fmt.Sprintf("<h2>%s</h2>", html.EscapeString(status)))
+		if len(payouts) == 0 {
+			sb.WriteString("<p>None.</p>")
+			continue
+		}
+		sb.WriteString("<table><thead><tr><th scope=\"col\">ID</th><th scope=\"col\">Seller</th><th scope=\"col\">Amount</th><th scope=\"col\">Network/Asset</th><th scope=\"col\">Action</th></tr></thead><tbody>")
+		for _, p := range payouts {
+			currency := strings.ToUpper(p.Currency)
+			sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td>%d</td><td>%s</td><td>%s/%s</td><td>",
+				p.ID, p.SellerID, html.EscapeString(formatMoney(p.AmountMinor, currency)), html.EscapeString(p.Network), html.EscapeString(p.Asset)))
+			switch status {
+			case store.PayoutNeedsManualReview:
+				sb.WriteString(fmt.Sprintf(`<form method="post" action="/admin/payouts/%d/approve" novalidate>%s<button class="btn" type="submit">Approve</button></form>`, p.ID, csrfInputHTML(s.csrfFor(r))))
+			case store.PayoutReadyForManualExecution:
+				sb.WriteString(fmt.Sprintf(`<form method="post" action="/admin/payouts/%d/complete" novalidate>%s<input name="tx_hash" placeholder="transaction hash" required><button class="btn" type="submit">Mark completed</button></form>`, p.ID, csrfInputHTML(s.csrfFor(r))))
+			default:
+				sb.WriteString("&mdash;")
+			}
+			sb.WriteString("</td></tr>")
+		}
+		sb.WriteString("</tbody></table>")
+	}
+	sb.WriteString("<p><a href=\"/admin\">Back to admin</a></p></section>")
+	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - payouts", sb.String()))
+}
+
+// adminPayoutsPause flips the platform-wide emergency pause flag.
+func (s *Server) adminPayoutsPause(w http.ResponseWriter, r *http.Request) {
+	admin := s.userFrom(r)
+	if err := r.ParseForm(); err != nil {
+		s.renderError(w, err)
+		return
+	}
+	paused := r.FormValue("action") == "pause"
+	if err := s.Store.SetPayoutsPaused(r.Context(), paused); err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.audit(r.Context(), &admin.ID, r, "payouts.pause_toggled", "platform_settings", "payouts_paused", map[string]any{"paused": paused})
+	http.Redirect(w, r, "/admin/payouts", http.StatusSeeOther)
+}
+
+// adminPayoutApprove moves a manual-review payout into the manual-execution
+// queue after an admin has checked it against allowlists/limits.
+func (s *Server) adminPayoutApprove(w http.ResponseWriter, r *http.Request) {
+	admin := s.userFrom(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	if err := s.Store.TransitionPayout(r.Context(), id, store.PayoutNeedsManualReview, store.PayoutReadyForManualExecution, &admin.ID, ""); err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.audit(r.Context(), &admin.ID, r, "payout.approved", "payout", strconv.FormatInt(id, 10), nil)
+	http.Redirect(w, r, "/admin/payouts", http.StatusSeeOther)
+}
+
+// adminPayoutComplete records a manually executed on-chain transfer's
+// transaction hash and marks the payout completed.
+func (s *Server) adminPayoutComplete(w http.ResponseWriter, r *http.Request) {
+	admin := s.userFrom(r)
+	id, err := strconv.ParseInt(r.PathValue("id"), 10, 64)
+	if err != nil {
+		s.notFound(w, r)
+		return
+	}
+	if err := r.ParseForm(); err != nil {
+		s.renderError(w, err)
+		return
+	}
+	txHash := strings.TrimSpace(r.FormValue("tx_hash"))
+	if txHash == "" {
+		s.flashError(r, "A transaction hash is required.")
+		http.Redirect(w, r, "/admin/payouts", http.StatusSeeOther)
+		return
+	}
+	if err := s.Store.TransitionPayout(r.Context(), id, store.PayoutReadyForManualExecution, store.PayoutCompleted, &admin.ID, txHash); err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.audit(r.Context(), &admin.ID, r, "payout.completed", "payout", strconv.FormatInt(id, 10), map[string]any{"tx_hash": txHash})
+	http.Redirect(w, r, "/admin/payouts", http.StatusSeeOther)
 }
 
 func csrfInputHTML(token string) string {

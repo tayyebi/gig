@@ -296,7 +296,7 @@ func toPackageViews(packages []store.GigPackage) []components.GigPackageView {
 	for _, p := range packages {
 		out = append(out, components.GigPackageView{
 			ID: p.ID, Tier: p.Tier, Name: p.Name, Description: p.Description,
-			Price: formatMoney(p.PriceMinorUnits, p.Currency),
+			Price:        formatMoney(p.PriceMinorUnits, p.Currency),
 			DeliveryDays: p.DeliveryDays, Revisions: p.Revisions,
 		})
 	}

@@ -13,14 +13,14 @@ import (
 // CreatePaymentInput is everything an adapter needs to start collecting
 // payment for one order.
 type CreatePaymentInput struct {
-	OrderID         int64
-	AmountMinor     int64
-	Currency        string // lowercase ISO 4217, e.g. "usd"
-	Description     string
-	IdempotencyKey  string
-	SuccessURL      string
-	CancelURL       string
-	BuyerEmail      string
+	OrderID        int64
+	AmountMinor    int64
+	Currency       string // lowercase ISO 4217, e.g. "usd"
+	Description    string
+	IdempotencyKey string
+	SuccessURL     string
+	CancelURL      string
+	BuyerEmail     string
 }
 
 // PaymentSession is what the buyer is redirected to after a payment is

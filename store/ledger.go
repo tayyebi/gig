@@ -12,14 +12,14 @@ import (
 
 // LedgerEntry is one persisted, immutable posting.
 type LedgerEntry struct {
-	ID                int64
-	TransactionGroup   string
-	AccountID          int64
-	Direction          string
-	AmountMinor        int64
-	Currency           string
-	OrderID            *int64
-	Description        string
+	ID               int64
+	TransactionGroup string
+	AccountID        int64
+	Direction        string
+	AmountMinor      int64
+	Currency         string
+	OrderID          *int64
+	Description      string
 }
 
 // getOrCreateLedgerAccount resolves the (kind, ownerID, currency) account,
@@ -82,9 +82,9 @@ func (s *Store) PostLedgerEntries(ctx context.Context, entries []ledger.Entry) (
 // AccountBalance is a running balance for one ledger account (credits minus
 // debits), used for seller earnings summaries and admin reconciliation.
 type AccountBalance struct {
-	Kind          string
-	Currency      string
-	BalanceMinor  int64
+	Kind         string
+	Currency     string
+	BalanceMinor int64
 }
 
 // SellerBalances returns a seller's pending and available earnings balances

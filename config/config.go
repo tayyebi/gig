@@ -2,6 +2,7 @@
 package config
 
 import (
+	"encoding/base64"
 	"fmt"
 	"os"
 	"strconv"
@@ -86,6 +87,32 @@ type Config struct {
 	BTCPayStoreID               string
 	BTCPayWebhookSecret         string
 	BTCPayRequiredConfirmations int
+
+	// Payments (EVM stablecoins, Phase 7). Network selection (Base, Polygon,
+	// or both) is a deployment choice: each chain's adapter is registered
+	// only when its RPC URL, treasury address, and at least one token
+	// contract are all set. Contract and treasury addresses only ever come
+	// from config, never user input (PLAN.md section 9's "verify token
+	// contract addresses from config only" requirement).
+	EVMBaseRPCURL             string
+	EVMBaseChainID            int64
+	EVMBaseTreasuryAddress    string
+	EVMBaseUSDCContract       string
+	EVMBaseUSDTContract       string
+	EVMPolygonRPCURL          string
+	EVMPolygonChainID         int64
+	EVMPolygonTreasuryAddress string
+	EVMPolygonUSDCContract    string
+	EVMPolygonUSDTContract    string
+	EVMRequiredConfirmations  int
+
+	// Wallet payouts (Phase 7). Stored wallet addresses are encrypted at
+	// rest, bound to network and asset; WalletEncryptionKey must be a
+	// base64-encoded 32-byte AES-256 key. Address changes require the
+	// existing email-confirmation-token flow plus a cooling-off period
+	// before the wallet becomes payout-eligible.
+	WalletEncryptionKey  string
+	WalletChangeCooldown time.Duration
 
 	// Jobs
 	JobPollInterval   time.Duration
@@ -224,6 +251,31 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 
+	c.EVMBaseRPCURL = env("EVM_BASE_RPC_URL", "")
+	if c.EVMBaseChainID, err = envInt64("EVM_BASE_CHAIN_ID", 8453); err != nil {
+		return nil, err
+	}
+	c.EVMBaseTreasuryAddress = strings.ToLower(env("EVM_BASE_TREASURY_ADDRESS", ""))
+	c.EVMBaseUSDCContract = strings.ToLower(env("EVM_BASE_USDC_CONTRACT", ""))
+	c.EVMBaseUSDTContract = strings.ToLower(env("EVM_BASE_USDT_CONTRACT", ""))
+	c.EVMPolygonRPCURL = env("EVM_POLYGON_RPC_URL", "")
+	if c.EVMPolygonChainID, err = envInt64("EVM_POLYGON_CHAIN_ID", 137); err != nil {
+		return nil, err
+	}
+	c.EVMPolygonTreasuryAddress = strings.ToLower(env("EVM_POLYGON_TREASURY_ADDRESS", ""))
+	c.EVMPolygonUSDCContract = strings.ToLower(env("EVM_POLYGON_USDC_CONTRACT", ""))
+	c.EVMPolygonUSDTContract = strings.ToLower(env("EVM_POLYGON_USDT_CONTRACT", ""))
+	// Confirmation depth before an EVM stablecoin transfer is treated as
+	// fulfillment-ready, guarding against reorgs (PLAN.md section 9).
+	if c.EVMRequiredConfirmations, err = envInt("EVM_REQUIRED_CONFIRMATIONS", 12); err != nil {
+		return nil, err
+	}
+
+	c.WalletEncryptionKey = env("WALLET_ENCRYPTION_KEY", "")
+	if c.WalletChangeCooldown, err = envDuration("WALLET_CHANGE_COOLDOWN", 24*time.Hour); err != nil {
+		return nil, err
+	}
+
 	if c.JobPollInterval, err = envDuration("JOB_POLL_INTERVAL", time.Second); err != nil {
 		return nil, err
 	}
@@ -307,6 +359,33 @@ func (c *Config) validate() error {
 	if c.BTCPayRequiredConfirmations < 0 {
 		return fmt.Errorf("BTCPAY_REQUIRED_CONFIRMATIONS cannot be negative")
 	}
+	if c.PaymentsEnabled && c.Environment == EnvProd && c.EVMBaseRPCURL != "" {
+		if c.EVMBaseTreasuryAddress == "" {
+			return errRequired("EVM_BASE_TREASURY_ADDRESS")
+		}
+		if c.EVMBaseUSDCContract == "" && c.EVMBaseUSDTContract == "" {
+			return fmt.Errorf("at least one of EVM_BASE_USDC_CONTRACT or EVM_BASE_USDT_CONTRACT is required when EVM_BASE_RPC_URL is set")
+		}
+	}
+	if c.PaymentsEnabled && c.Environment == EnvProd && c.EVMPolygonRPCURL != "" {
+		if c.EVMPolygonTreasuryAddress == "" {
+			return errRequired("EVM_POLYGON_TREASURY_ADDRESS")
+		}
+		if c.EVMPolygonUSDCContract == "" && c.EVMPolygonUSDTContract == "" {
+			return fmt.Errorf("at least one of EVM_POLYGON_USDC_CONTRACT or EVM_POLYGON_USDT_CONTRACT is required when EVM_POLYGON_RPC_URL is set")
+		}
+	}
+	if c.EVMRequiredConfirmations < 0 {
+		return fmt.Errorf("EVM_REQUIRED_CONFIRMATIONS cannot be negative")
+	}
+	if (c.EVMBaseRPCURL != "" || c.EVMPolygonRPCURL != "") && c.Environment == EnvProd && c.WalletEncryptionKey == "" {
+		return errRequired("WALLET_ENCRYPTION_KEY")
+	}
+	if c.WalletEncryptionKey != "" {
+		if key, err := DecodeWalletKey(c.WalletEncryptionKey); err != nil || len(key) != 32 {
+			return fmt.Errorf("WALLET_ENCRYPTION_KEY must be a base64-encoded 32-byte key")
+		}
+	}
 	return nil
 }
 
@@ -375,6 +454,13 @@ func envDuration(key string, def time.Duration) (time.Duration, error) {
 		return 0, fmt.Errorf("%s must be a duration (e.g. 15s, 24h): %w", key, err)
 	}
 	return d, nil
+}
+
+// DecodeWalletKey decodes WALLET_ENCRYPTION_KEY (base64) into raw key bytes.
+// Shared with services.WalletCrypto so the config-time validation and the
+// actual AES key derivation never disagree about the encoding.
+func DecodeWalletKey(encoded string) ([]byte, error) {
+	return base64.StdEncoding.DecodeString(encoded)
 }
 
 func envBool(key string, def bool) (bool, error) {

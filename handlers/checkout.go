@@ -242,6 +242,16 @@ func (s *Server) availablePaymentMethods() []components.CheckoutPaymentMethodOpt
 			Value: "bitcoin", Label: "Bitcoin / Lightning (BTCPay)", Checked: len(opts) == 0,
 		})
 	}
+	if s.Providers.Has("evm-base") {
+		opts = append(opts, components.CheckoutPaymentMethodOption{
+			Value: "usdc-base", Label: "USDC on Base", Checked: len(opts) == 0,
+		})
+	}
+	if s.Providers.Has("evm-polygon") {
+		opts = append(opts, components.CheckoutPaymentMethodOption{
+			Value: "usdc-polygon", Label: "USDC on Polygon", Checked: len(opts) == 0,
+		})
+	}
 	return opts
 }
 

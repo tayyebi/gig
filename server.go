@@ -31,6 +31,13 @@ type Server struct {
 func newServer(cfg *config.Config, log *slog.Logger, st *store.Store) *Server {
 	mailer := services.MailerFromConfig(cfg, log)
 	registry := buildProviderRegistry(cfg)
+	var wallet *services.WalletCrypto
+	if cfg.WalletEncryptionKey != "" {
+		var err error
+		if wallet, err = services.NewWalletCrypto(cfg); err != nil {
+			log.Error("wallet crypto disabled: invalid WALLET_ENCRYPTION_KEY", "error", err)
+		}
+	}
 	return &Server{
 		cfg:   cfg,
 		log:   log,
@@ -41,6 +48,7 @@ func newServer(cfg *config.Config, log *slog.Logger, st *store.Store) *Server {
 			Cfg:       cfg,
 			Mailer:    mailer,
 			Providers: registry,
+			Wallet:    wallet,
 		}),
 	}
 }
@@ -59,6 +67,14 @@ func buildProviderRegistry(cfg *config.Config) providers.Registry {
 	}
 	if cfg.BTCPayURL != "" && cfg.BTCPayAPIKey != "" && cfg.BTCPayStoreID != "" {
 		ps = append(ps, providers.NewBTCPay(cfg.BTCPayURL, cfg.BTCPayAPIKey, cfg.BTCPayStoreID))
+	}
+	if cfg.EVMBaseRPCURL != "" && cfg.EVMBaseTreasuryAddress != "" {
+		ps = append(ps, providers.NewEVM("evm-base", cfg.EVMBaseRPCURL, cfg.EVMBaseChainID, cfg.EVMBaseTreasuryAddress,
+			map[string]string{"usdc": cfg.EVMBaseUSDCContract, "usdt": cfg.EVMBaseUSDTContract}, cfg.EVMRequiredConfirmations))
+	}
+	if cfg.EVMPolygonRPCURL != "" && cfg.EVMPolygonTreasuryAddress != "" {
+		ps = append(ps, providers.NewEVM("evm-polygon", cfg.EVMPolygonRPCURL, cfg.EVMPolygonChainID, cfg.EVMPolygonTreasuryAddress,
+			map[string]string{"usdc": cfg.EVMPolygonUSDCContract, "usdt": cfg.EVMPolygonUSDTContract}, cfg.EVMRequiredConfirmations))
 	}
 	return providers.NewRegistry(ps...)
 }
