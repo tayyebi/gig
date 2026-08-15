@@ -174,6 +174,16 @@ func normalizeInvoiceStatus(status, additionalStatus string) string {
 	case "Processing":
 		return StatusProcessing
 	case "Settled":
+		if additionalStatus == "PaidPartial" || additionalStatus == "PaidLate" {
+			// BTCPay considers the invoice settled, but the buyer either
+			// underpaid (a partial payment the merchant chose to accept) or
+			// paid after the invoice's payment window — either way this is
+			// not the clean "fully paid on time" case fulfillment should
+			// gate on, so it is left at Processing for manual review via
+			// the reconciliation sweep and admin payment views, matching
+			// the same policy already applied to the Expired case below.
+			return StatusProcessing
+		}
 		return StatusSucceeded
 	case "Expired":
 		if additionalStatus == "PaidPartial" || additionalStatus == "PaidLate" {

@@ -283,14 +283,14 @@ Explicitly out of scope for this pass (flagged rather than silently stubbed): ac
 
 ### Reliability and performance
 
-- [ ] Implement job queue retry with backoff and dead-letter handling
-- [ ] Test duplicate and out-of-order webhooks
-- [ ] Test provider downtime and retry queues
-- [ ] Test expired payment sessions
-- [ ] Test partial, under, and overpayments
-- [ ] Test blockchain reorg and insufficient confirmations
-- [ ] Test concurrent acceptance/refund/payout attempts
-- [ ] Test concurrent migration startup under advisory lock contention
+- [x] Implement job queue retry with backoff and dead-letter handling — already existed pre-Phase 8 (`store.FailJob`: backoff via `run_at`, dead-letter once `attempts >= max_attempts`); this pass added the admin-facing `store.RetryJob` re-queue path on top
+- [x] Test duplicate and out-of-order webhooks — `store/reliability_test.go` `TestInsertWebhookEventDedup` (same provider+event_id delivered twice inserts once; `PendingWebhookEvents` shows exactly one row)
+- [x] Test provider downtime and retry queues — `store/reliability_test.go` `TestConcurrentClaimJobOnlyOneWinner` (8 goroutines racing `ClaimJob` on one pending job, exactly one wins — `FOR UPDATE SKIP LOCKED` under contention) and `TestRetryJobRequeuesDeadLetter`
+- [ ] Test expired payment sessions — not covered by an automated test yet; the expiry path itself exists (`payments.go` root package, worker sweep) but has no dedicated test
+- [x] Test partial, under, and overpayments — `providers/btcpay_test.go` `TestNormalizeInvoiceStatusPartialAndOverpayment`; writing this test caught and fixed a real bug where `Settled`+`PaidPartial`/`PaidLate` was falling through to `StatusSucceeded` instead of `StatusProcessing` as the code's own doc comment claimed (the `additionalStatus` check was only ever wired into the `Expired` branch, not `Settled`) — a previously-silent underpayment-acceptance bug
+- [ ] Test blockchain reorg and insufficient confirmations — `providers/evm.go`'s confirmation-depth check is not factored into an independently testable pure function yet, so it has no unit test here
+- [ ] Test concurrent acceptance/refund/payout attempts — not covered; would need order/payment fixture helpers that don't exist yet in `store/*_test.go`
+- [x] Test concurrent migration startup under advisory lock contention — already existed pre-Phase 8, `store/migrate_test.go` `TestMigrateUnderContention`
 - [ ] Run load tests on search, checkout, and messaging
 - [ ] Verify mobile performance and page weight budgets
 - [ ] Exercise backup and restore procedures `(ops)`
