@@ -166,6 +166,18 @@ func (e *EVM) assetForOrder(in CreatePaymentInput) (asset, contract string, err 
 // orders for the identical amount arriving in the same scan window could in
 // principle collide — a known limitation, surfaced (like BTCPay's
 // underpayment case) via admin review rather than silently mishandled.
+// confirmationStatus decides succeeded-vs-processing from block depth alone,
+// so a reorg that drops the transferring block below the confirmation
+// threshold (or removes it from the log scan entirely on the next poll)
+// naturally re-reports it as processing/pending rather than succeeded.
+func confirmationStatus(head, blockNum, required int64) string {
+	confirmations := head - blockNum + 1
+	if confirmations >= required {
+		return StatusSucceeded
+	}
+	return StatusProcessing
+}
+
 func (e *EVM) Payment(ctx context.Context, providerRef string) (NormalizedPayment, error) {
 	orderID, asset, startBlock, expected, err := parseEVMProviderRef(providerRef)
 	if err != nil {
@@ -209,11 +221,7 @@ func (e *EVM) Payment(ctx context.Context, providerRef string) (NormalizedPaymen
 		if err != nil {
 			continue
 		}
-		confirmations := head - blockNum + 1
-		status := StatusProcessing
-		if confirmations >= int64(e.RequiredConfirmations) {
-			status = StatusSucceeded
-		}
+		status := confirmationStatus(head, blockNum, int64(e.RequiredConfirmations))
 		return NormalizedPayment{
 			ProviderRef: providerRef,
 			ChargeRef:   l.TxHash,
