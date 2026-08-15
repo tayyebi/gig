@@ -66,6 +66,11 @@ func (s *Store) CreatePaymentIntent(ctx context.Context, orderID int64, provider
 // idempotency key has already been used for a prior attempt.
 var ErrDuplicateIdempotencyKey = errors.New("idempotency key already used")
 
+// ErrDuplicate is returned by CreateRefund when the order already has a
+// non-failed refund (idx_refunds_order_not_failed), the race-safe backstop
+// behind the application-level GetRefundForOrder check.
+var ErrDuplicate = errors.New("duplicate")
+
 // GetPaymentIntentByIdempotencyKey resolves an existing intent so a retried
 // checkout confirmation can be resumed instead of double-charged.
 func (s *Store) GetPaymentIntentByIdempotencyKey(ctx context.Context, key string) (*PaymentIntent, error) {
@@ -348,10 +353,54 @@ func (s *Store) CreateRefund(ctx context.Context, orderID, paymentIntentID int64
 		INSERT INTO refunds (order_id, payment_intent_id, requested_by, reason, amount_minor_units, currency)
 		VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
 		orderID, paymentIntentID, uid, reason, amountMinor, currency).Scan(&id)
+	if isUniqueViolation(err) {
+		return 0, ErrDuplicate
+	}
 	if err != nil {
 		return 0, fmt.Errorf("create refund for order %d: %w", orderID, err)
 	}
 	return id, nil
+}
+
+// Refund is a refund request against a captured payment.
+type Refund struct {
+	ID              int64
+	OrderID         int64
+	PaymentIntentID int64
+	RequestedBy     *int64
+	Reason          string
+	AmountMinor     int64
+	Currency        string
+	Status          string
+	ProviderRef     string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+}
+
+// GetRefundForOrder returns the order's non-failed refund, if any — a
+// "failed" refund can be retried (a fresh row), but a pending or succeeded
+// one means the order was already refunded and must not be refunded again.
+// Callers use this to reject a duplicate refund request before ever calling
+// the provider, backed by the DB-level idx_refunds_order_not_failed index
+// as the actual safety net against a race.
+func (s *Store) GetRefundForOrder(ctx context.Context, orderID int64) (*Refund, error) {
+	var rf Refund
+	var requestedBy sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `
+		SELECT id, order_id, payment_intent_id, requested_by, reason, amount_minor_units, currency, status, provider_ref, created_at, updated_at
+		FROM refunds WHERE order_id = $1 AND status <> 'failed'`, orderID,
+	).Scan(&rf.ID, &rf.OrderID, &rf.PaymentIntentID, &requestedBy, &rf.Reason, &rf.AmountMinor, &rf.Currency, &rf.Status, &rf.ProviderRef, &rf.CreatedAt, &rf.UpdatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("get refund for order %d: %w", orderID, err)
+	}
+	if requestedBy.Valid {
+		v := requestedBy.Int64
+		rf.RequestedBy = &v
+	}
+	return &rf, nil
 }
 
 // SetRefundStatus updates a refund's terminal status and provider reference.

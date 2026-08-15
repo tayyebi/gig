@@ -736,6 +736,14 @@ func (s *Server) adminOrderRefund(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, fmt.Sprintf("/admin/orders/%d/payments", orderID), http.StatusSeeOther)
 		return
 	}
+	if _, err := s.Store.GetRefundForOrder(r.Context(), orderID); err == nil {
+		s.flashError(r, "This order already has a refund in progress or completed.")
+		http.Redirect(w, r, fmt.Sprintf("/admin/orders/%d/payments", orderID), http.StatusSeeOther)
+		return
+	} else if !errors.Is(err, store.ErrNotFound) {
+		s.renderError(w, err)
+		return
+	}
 	provider, ok := s.Providers.Get(intent.Provider)
 	if !ok {
 		s.flashError(r, "Payments are not enabled.")
@@ -759,6 +767,11 @@ func (s *Server) adminOrderRefund(w http.ResponseWriter, r *http.Request) {
 	}
 
 	refundID, err := s.Store.CreateRefund(r.Context(), orderID, intent.ID, &admin.ID, reason, amount, intent.Currency)
+	if errors.Is(err, store.ErrDuplicate) {
+		s.flashError(r, "This order already has a refund in progress or completed.")
+		http.Redirect(w, r, fmt.Sprintf("/admin/orders/%d/payments", orderID), http.StatusSeeOther)
+		return
+	}
 	if err != nil {
 		s.renderError(w, err)
 		return

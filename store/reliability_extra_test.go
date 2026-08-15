@@ -104,6 +104,57 @@ func TestListStalePaymentIntentsExpiry(t *testing.T) {
 	}
 }
 
+// TestCreateRefundRejectsDuplicate covers the idx_refunds_order_not_failed
+// constraint: a second non-failed refund for the same order is rejected
+// with ErrDuplicate, so a double-submitted admin refund form (or two admins
+// racing on it) cannot create two refund rows or double-post ledger
+// entries. A refund that failed can still be retried with a fresh row.
+func TestCreateRefundRejectsDuplicate(t *testing.T) {
+	st := openTestStore(t)
+	ctx := context.Background()
+
+	buyer := insertTestUser(t, st, "refund-buyer")
+	seller := insertTestUser(t, st, "refund-seller")
+	gig := insertTestGig(t, st, seller)
+	order := insertTestOrder(t, st, buyer, seller, gig, "paid")
+	intent, err := st.CreatePaymentIntent(ctx, order, "stripe", "card", 1000, "USD", fmt.Sprintf("idem-refund-%d", time.Now().UnixNano()))
+	if err != nil {
+		t.Fatalf("CreatePaymentIntent: %v", err)
+	}
+
+	if _, err := st.GetRefundForOrder(ctx, order); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetRefundForOrder before any refund: got %v, want ErrNotFound", err)
+	}
+
+	id1, err := st.CreateRefund(ctx, order, intent.ID, nil, "buyer request", 1000, "USD")
+	if err != nil {
+		t.Fatalf("first CreateRefund: %v", err)
+	}
+
+	if _, err := st.CreateRefund(ctx, order, intent.ID, nil, "duplicate attempt", 1000, "USD"); !errors.Is(err, ErrDuplicate) {
+		t.Fatalf("second CreateRefund on same order: got %v, want ErrDuplicate", err)
+	}
+
+	found, err := st.GetRefundForOrder(ctx, order)
+	if err != nil {
+		t.Fatalf("GetRefundForOrder after refund: %v", err)
+	}
+	if found.ID != id1 {
+		t.Fatalf("GetRefundForOrder returned %d, want %d", found.ID, id1)
+	}
+
+	// A failed refund frees up the order for a fresh retry.
+	if err := st.SetRefundStatus(ctx, id1, "failed", ""); err != nil {
+		t.Fatalf("SetRefundStatus: %v", err)
+	}
+	if _, err := st.GetRefundForOrder(ctx, order); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetRefundForOrder after failed refund: got %v, want ErrNotFound", err)
+	}
+	if _, err := st.CreateRefund(ctx, order, intent.ID, nil, "retry", 1000, "USD"); err != nil {
+		t.Fatalf("CreateRefund retry after failed refund: %v", err)
+	}
+}
+
 // TestConcurrentTransitionPayoutOnlyOneWinner covers "test concurrent
 // acceptance/refund/payout attempts": two admins approving the same queued
 // payout at once (a double-click, or two browser tabs) must not both
