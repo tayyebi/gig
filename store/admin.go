@@ -20,7 +20,7 @@ func (s *Store) ListUsersAdmin(ctx context.Context, status, search string, limit
 		limit = 50
 	}
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, email, password_hash, name, locale, status, email_verified_at, totp_enabled,
+		SELECT id, email, password_hash, name, locale, status, email_verified_at, totp_enabled_at,
 			failed_login_attempts, locked_until, last_login_at, created_at, updated_at
 		FROM users
 		WHERE ($1 = '' OR status = $1)
@@ -34,10 +34,24 @@ func (s *Store) ListUsersAdmin(ctx context.Context, status, search string, limit
 	var out []User
 	for rows.Next() {
 		var u User
-		if err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Locale, &u.Status, &u.EmailVerifiedAt, &u.TotpEnabled,
-			&u.FailedLoginAttempts, &u.LockedUntil, &u.LastLoginAt, &u.CreatedAt, &u.UpdatedAt); err != nil {
+		var verified, totpEnabled, lockedUntil, lastLogin sql.NullTime
+		if err := rows.Scan(&u.ID, &u.Email, &u.PasswordHash, &u.Name, &u.Locale, &u.Status, &verified, &totpEnabled,
+			&u.FailedLoginAttempts, &lockedUntil, &lastLogin, &u.CreatedAt, &u.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("scan user (admin): %w", err)
 		}
+		if verified.Valid {
+			t := verified.Time
+			u.EmailVerifiedAt = &t
+		}
+		if lockedUntil.Valid {
+			t := lockedUntil.Time
+			u.LockedUntil = &t
+		}
+		if lastLogin.Valid {
+			t := lastLogin.Time
+			u.LastLoginAt = &t
+		}
+		u.TotpEnabled = totpEnabled.Valid
 		out = append(out, u)
 	}
 	return out, rows.Err()

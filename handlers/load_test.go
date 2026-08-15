@@ -28,10 +28,20 @@ func TestConcurrentLoadSearchGigDetailAndOrderDetail(t *testing.T) {
 	a := newAuthServer(t)
 	ctx := context.Background()
 
-	buyerID, err := a.srv.Store.CreateUser(ctx, "load-buyer@example.com", "hash", "Load Buyer", "en")
+	// Register the buyer through HTTP (not store.CreateUser) so a.jar ends
+	// up holding a real session cookie for this exact user — /orders/{id}
+	// is buyer/seller/admin-gated, so a session belonging to some other
+	// user would 404 every order-detail request below.
+	csrf := a.csrf(t, "/register")
+	a.req(t, http.MethodPost, "/register",
+		"name=Load+Buyer&email=load-buyer@example.com&password=password123&password_confirm=password123&_csrf="+csrf)
+	buyer, err := a.srv.Store.GetUserByEmail(ctx, "load-buyer@example.com")
 	if err != nil {
-		t.Fatalf("CreateUser buyer: %v", err)
+		t.Fatalf("GetUserByEmail buyer: %v", err)
 	}
+	buyerID := buyer.ID
+	cookies := append([]*http.Cookie{}, a.jar...)
+
 	sellerID, err := a.srv.Store.CreateUser(ctx, "load-seller@example.com", "hash", "Load Seller", "en")
 	if err != nil {
 		t.Fatalf("CreateUser seller: %v", err)
@@ -70,14 +80,9 @@ func TestConcurrentLoadSearchGigDetailAndOrderDetail(t *testing.T) {
 		}
 	}
 
-	// A real session cookie for the buyer, established once up front —
-	// reused read-only (never mutated) by every goroutine below, since
-	// a.jar itself is not goroutine-safe to mutate concurrently.
-	csrf := a.csrf(t, "/register")
-	a.req(t, http.MethodPost, "/register",
-		"name=Load+Reader&email=load-reader@example.com&password=password123&password_confirm=password123&_csrf="+csrf)
-	cookies := append([]*http.Cookie{}, a.jar...)
-
+	// cookies (captured above right after registering the buyer) is reused
+	// read-only by every goroutine below, since a.jar itself is not
+	// goroutine-safe to mutate concurrently.
 	do := func(method, path string) int {
 		req := httptest.NewRequest(method, path, nil)
 		for _, c := range cookies {

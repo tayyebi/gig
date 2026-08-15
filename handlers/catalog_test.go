@@ -153,7 +153,13 @@ func TestSellerGigLifecycleEndToEnd(t *testing.T) {
 	// still-logged-in session from earlier in this test.
 	sellerJar := a.jar
 	a.jar = nil
-	anonCSRF := a.csrf(t, "/gigs/"+slug)
+	// The gig detail page's favorite form (and its CSRF field) only
+	// renders for a signed-in visitor (CanFavorite requires u != nil,
+	// handlers/catalog.go); an anonymous session's CSRF token still
+	// exists (ensureSession issues one to every visitor), just not on
+	// this particular page, so pull it from /login, which always renders
+	// a CSRF-protected form regardless of auth state.
+	anonCSRF := a.csrf(t, "/login")
 	rec = a.req(t, http.MethodPost, "/gigs/"+slug+"/favorite", "_csrf="+anonCSRF)
 	if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "/login") {
 		t.Fatalf("anonymous favorite = %d location=%q, want redirect to /login", rec.Code, rec.Header().Get("Location"))

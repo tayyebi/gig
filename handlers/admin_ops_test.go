@@ -31,7 +31,12 @@ func TestAdminUserSuspendAndRestore(t *testing.T) {
 	a := newAuthServer(t)
 	adminTestUser(t, a, "admin1@example.com")
 
-	// A second, plain buyer account to suspend.
+	// A second, plain buyer account to suspend. /register redirects an
+	// already-authenticated visitor away instead of rendering the form
+	// (registerForm, `if s.userFrom(r) != nil`), so log out first —
+	// otherwise a.csrf silently gets the redirect instead of a real form.
+	logoutFirstCSRF := a.csrf(t, "/")
+	a.req(t, http.MethodPost, "/logout", "_csrf="+logoutFirstCSRF)
 	csrf := a.csrf(t, "/register")
 	a.req(t, http.MethodPost, "/register",
 		"name=Buyer+Two&email=buyer2@example.com&password=password123&password_confirm=password123&_csrf="+csrf)
