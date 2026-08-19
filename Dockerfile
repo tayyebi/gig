@@ -12,6 +12,6 @@ COPY docker/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
 
 WORKDIR /app
-EXPOSE 8080
+EXPOSE 4099
 
 ENTRYPOINT ["/usr/local/bin/entrypoint.sh"]

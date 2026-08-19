@@ -137,10 +137,10 @@ func Load() (*Config, error) {
 		return nil, err
 	}
 	c.Environment = env("ENVIRONMENT", EnvDev)
-	if c.HTTPAddr = env("HTTP_ADDR", ":8080"); c.HTTPAddr == "" {
+	if c.HTTPAddr = env("HTTP_ADDR", ":4099"); c.HTTPAddr == "" {
 		return nil, errRequired("HTTP_ADDR")
 	}
-	if c.BaseURL = env("BASE_URL", "http://localhost:8080"); c.BaseURL == "" {
+	if c.BaseURL = env("BASE_URL", "http://localhost:4099"); c.BaseURL == "" {
 		return nil, errRequired("BASE_URL")
 	}
 	c.LogLevel = env("LOG_LEVEL", "info")

@@ -18,9 +18,10 @@ templating, and routing), and PostgreSQL.
 docker compose up -d --build
 ```
 
-- Web: http://localhost:8090
-- Health: http://localhost:8090/healthz, http://localhost:8090/readyz
-- PostgreSQL is published on `127.0.0.1:5432` for local tooling only.
+- Web: http://localhost:4099
+- Health: http://localhost:4099/healthz, http://localhost:4099/readyz
+- PostgreSQL is not published to the host; reach it inside the compose
+  network as `db:5432`, or via `docker compose exec db psql -U gig gig`.
 
 `web` applies migrations at startup and serves HTTP; `worker` runs the same
 binary with `APP_ROLE=worker` and consumes the PostgreSQL-backed job queue.

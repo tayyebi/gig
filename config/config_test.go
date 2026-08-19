@@ -27,7 +27,7 @@ func TestLoadDefaults(t *testing.T) {
 	if c.AppRole != RoleWeb {
 		t.Errorf("AppRole = %q, want web", c.AppRole)
 	}
-	if c.HTTPAddr != ":8080" {
+	if c.HTTPAddr != ":4099" {
 		t.Errorf("HTTPAddr = %q", c.HTTPAddr)
 	}
 	if c.SessionTTL != 24*time.Hour {

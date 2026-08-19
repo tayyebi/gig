@@ -315,4 +315,3 @@ func TestBuyerSellerJourneyEndToEnd(t *testing.T) {
 		t.Errorf("review rating = %d, want 5", rev.Rating)
 	}
 }
-

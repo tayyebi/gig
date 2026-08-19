@@ -79,10 +79,10 @@ func TestColorContrastMeetsWCAG_AA(t *testing.T) {
 	}
 
 	cases := []struct {
-		name           string
-		fg, bg         string
-		minRatio       float64
-		largeTextOrUI  bool
+		name          string
+		fg, bg        string
+		minRatio      float64
+		largeTextOrUI bool
 	}{
 		{"body text on page background", need("--color-text"), need("--color-bg"), 4.5, false},
 		{"body text on surface", need("--color-text"), need("--color-surface"), 4.5, false},
