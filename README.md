@@ -18,13 +18,31 @@ templating, and routing), and PostgreSQL.
 docker compose up -d --build
 ```
 
-- Web: http://localhost:4099
-- Health: http://localhost:4099/healthz, http://localhost:4099/readyz
-- PostgreSQL is not published to the host; reach it inside the compose
-  network as `db:5432`, or via `docker compose exec db psql -U gig gig`.
+- Web: https://localhost:4100
+- Health: https://localhost:4100/healthz, https://localhost:4100/readyz
+
+`nginx` publishes the only host port (4100) and terminates TLS; `web`, `worker`,
+and `db` are reachable only on the internal compose network. For host-side
+database access use `docker compose exec db psql -U gig gig`.
 
 `web` applies migrations at startup and serves HTTP; `worker` runs the same
 binary with `APP_ROLE=worker` and consumes the PostgreSQL-backed job queue.
+
+### TLS certificate
+
+On first start nginx generates a self-signed certificate into `.docker/certs/`
+and reuses it thereafter, so browsers only need to be told to trust it once.
+Browsers will still warn — that is expected for a self-signed certificate.
+
+The certificate is issued for `localhost` by default. When serving from a real
+server, set the names it should cover *before* the first start:
+
+```sh
+CERT_HOSTS=gig.example.com,203.0.113.10 docker compose up -d --build
+```
+
+To reissue (for example after changing `CERT_HOSTS`), delete `.docker/certs/`
+and restart the `nginx` service.
 
 ## Run locally
 

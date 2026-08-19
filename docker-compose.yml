@@ -25,7 +25,7 @@ services:
       ENVIRONMENT: dev
       LOG_LEVEL: debug
       HTTP_ADDR: ":4099"
-      BASE_URL: "http://localhost:4099"
+      BASE_URL: "https://localhost:4100"
       DATABASE_URL: "postgres://gig:gig-dev-password@db:5432/gig?sslmode=disable"
       SESSION_SECRET: "dev-only-session-secret-0123456789abcdef"
       CSRF_SECRET: "dev-only-csrf-secret-0123456789abcdef"
@@ -38,8 +38,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "127.0.0.1:4099:4099"
+    # No host port: the app is reachable only through the nginx proxy.
     volumes:
       # Source, tooling caches, compiled binary, and app data all live on
       # the host — the container contributes nothing but the Go runtime.
@@ -49,6 +48,27 @@ services:
       - ./.docker/bin:/hostbin
       - ./.docker/data:/data
       - ./.docker/data-private:/data-private
+    networks:
+      - internal
+
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    environment:
+      # Names baked into the self-signed cert. Set this to the server's public
+      # hostname or IP (comma-separated) before first start, or delete
+      # .docker/certs to have it reissued.
+      CERT_HOSTS: "${CERT_HOSTS:-localhost}"
+    depends_on:
+      - web
+    # The only port published to the host. Everything else talks over the
+    # internal network.
+    ports:
+      - "4100:443"
+    volumes:
+      # Certificate persists on the host so clients trust it just once.
+      - ./.docker/certs:/etc/nginx/certs
     networks:
       - internal
 
