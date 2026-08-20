@@ -1,0 +1,42 @@
+{{define "sellerpayouts"}}
+<section class="container">
+  <h1>Request payout</h1>
+  {{if not .Enabled}}
+  <p>Wallet payouts are not enabled on this deployment yet.</p>
+  {{else}}
+  {{if .Paused}}<p><strong>Payouts are paused platform-wide right now.</strong> You can still request one; it will be held until payouts resume.</p>{{end}}
+  {{if not .Eligible}}
+  <p>No confirmed, payout-eligible wallet on file yet. <a href="/sell/wallet">Add or confirm a wallet</a> first.</p>
+  {{else}}
+  {{range .Eligible}}
+  <h2>{{.Asset}} {{.Network}}</h2>
+  <p>Available: {{.AvailableText}}</p>
+  <form method="post" action="/sell/payouts/request" novalidate>
+    {{template "csrffield" $.CSRF}}
+    <input type="hidden" name="wallet_id" value="{{.WalletID}}">
+    <div class="field">
+      <label for="{{fieldid (printf "amount-%d" .WalletID)}}">Amount (USD)</label>
+      <input id="{{fieldid (printf "amount-%d" .WalletID)}}" name="amount" type="text" required inputmode="decimal" placeholder="0.00">
+    </div>
+    <button class="btn btn-primary" type="submit">Request payout</button>
+  </form>
+  {{end}}
+  {{end}}
+  <h2>Payout history</h2>
+  {{if not .Payouts}}
+  <p class="muted">No payouts requested yet.</p>
+  {{else}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">Requested</th><th scope="col">Amount</th><th scope="col">Network/asset</th><th scope="col">Status</th></tr></thead>
+    <tbody>
+    {{range .Payouts}}
+    <tr><td>{{.CreatedAt}}</td><td>{{.AmountText}}</td><td>{{.Network}} / {{.Asset}}</td><td>{{template "statusbadge" .StatusBadge}}</td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{end}}
+  {{end}}
+</section>
+{{end}}

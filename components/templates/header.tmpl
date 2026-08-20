@@ -9,14 +9,14 @@
       <a href="/sell">Selling</a>
       {{else}}
       <form method="post" action="/sell/start" class="inline-form">
-        <input type="hidden" name="_csrf" value="{{.CSRF}}">
+        {{template "csrffield" .CSRF}}
         <button type="submit" class="link-button">Start selling</button>
       </form>
       {{end}}
       <a href="/dashboard">Dashboard</a>
       <a href="/account">Account</a>
       <form method="post" action="/logout" class="inline-form">
-        <input type="hidden" name="_csrf" value="{{.CSRF}}">
+        {{template "csrffield" .CSRF}}
         <button type="submit" class="link-button">Log out</button>
       </form>
     </nav>

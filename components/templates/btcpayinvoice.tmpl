@@ -1,0 +1,9 @@
+{{define "btcpayinvoice"}}
+<section class="container">
+  <h1>Bitcoin / Lightning payment</h1>
+  <p>Status: {{.StatusText}}</p>
+  <p class="hint">This page refreshes automatically. Once BTCPay confirms your payment, order #{{.OrderID}} will move to in progress.</p>
+  <p><a href="{{.CheckoutURL}}">Continue to your Bitcoin/Lightning invoice</a></p>
+  <p><a href="/orders/{{.OrderID}}">Back to order</a></p>
+</section>
+{{end}}

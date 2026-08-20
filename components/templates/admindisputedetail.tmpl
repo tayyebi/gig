@@ -1,0 +1,42 @@
+{{define "admindisputedetail"}}
+<section class="container">
+  <h1>Dispute #{{.ID}}</h1>
+  <dl>
+    <dt>Order</dt><dd><a href="/orders/{{.OrderID}}">#{{.OrderID}}</a></dd>
+    <dt>Opened by user</dt><dd>{{.OpenedBy}}</dd>
+    <dt>Reason</dt><dd>{{.Reason}}</dd>
+    <dt>Status</dt><dd>{{.Status}}</dd>
+    <dt>Decision</dt><dd>{{.Decision}}</dd>
+  </dl>
+
+  <h2>Evidence</h2>
+  {{if not .Evidence}}
+  <p class="muted">No evidence uploaded.</p>
+  {{else}}
+  <ul>{{range .Evidence}}<li><a href="/orders/{{$.OrderID}}/attachments/{{.ID}}">{{.FileName}}</a></li>{{end}}</ul>
+  {{end}}
+
+  <h2>Internal notes</h2>
+  <form method="post" action="/admin/disputes/{{.ID}}/notes" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "notes"}}">Notes (never shown to buyer or seller)</label>
+      <textarea id="{{fieldid "notes"}}" name="notes" rows="4">{{.InternalNotes}}</textarea>
+    </div>
+    <button class="btn" type="submit">Save notes</button>
+  </form>
+
+  {{if .Open}}
+  <h2>Resolve</h2>
+  <form method="post" action="/orders/{{.OrderID}}/dispute/resolve" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "decision"}}">Decision (shown to buyer and seller)</label>
+      <textarea id="{{fieldid "decision"}}" name="decision" rows="4" required></textarea>
+    </div>
+    <button class="btn" type="submit">Resolve dispute</button>
+  </form>
+  {{end}}
+  <p><a href="/admin/disputes">Back to disputes</a></p>
+</section>
+{{end}}

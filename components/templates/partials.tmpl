@@ -1,0 +1,76 @@
+{{define "csrffield"}}<input type="hidden" name="_csrf" value="{{.}}">{{end}}
+
+{{/* StatusBadge{Label, Kind}; Kind one of success|danger|muted|accent|"" (default info) */}}
+{{define "statusbadge"}}<span class="badge{{if .Kind}} badge-{{.Kind}}{{end}}">{{.Label}}</span>{{end}}
+
+{{/* AdminTable{Columns []string, Rows [][]template.HTML} */}}
+{{define "admintable"}}
+<div class="table-wrap">
+<table>
+  <thead><tr>{{range .Columns}}<th scope="col">{{.}}</th>{{end}}</tr></thead>
+  <tbody>
+  {{if not .Rows}}<tr><td colspan="{{len .Columns}}" class="muted">Nothing here yet.</td></tr>{{end}}
+  {{range .Rows}}<tr>{{range .}}<td>{{.}}</td>{{end}}</tr>{{end}}
+  </tbody>
+</table>
+</div>
+{{end}}
+
+{{/* FilterForm{Action string, Fields []FilterField} */}}
+{{define "filterform"}}
+<form method="get" action="{{.Action}}" class="filter-form" novalidate>
+  {{range .Fields}}
+  <div class="field">
+    <label for="{{fieldid .Name}}">{{.Label}}</label>
+    {{if .Options}}
+    <select id="{{fieldid .Name}}" name="{{.Name}}">
+      {{range .Options}}<option value="{{.Value}}"{{if .Selected}} selected{{end}}>{{.Label}}</option>{{end}}
+    </select>
+    {{else}}
+    <input id="{{fieldid .Name}}" name="{{.Name}}" type="text" value="{{.Value}}">
+    {{end}}
+  </div>
+  {{end}}
+  <button class="btn" type="submit">Filter</button>
+</form>
+{{end}}
+
+{{/* ModerationFilterData{Base, Current string; States []string} */}}
+{{define "moderationfilter"}}<p>{{range $i, $st := .States}}{{if $i}} | {{end}}{{if eq $st $.Current}}<strong>{{$st}}</strong>{{else}}<a href="{{$.Base}}?state={{$st}}">{{$st}}</a>{{end}}{{end}}</p>{{end}}
+
+{{/* ActionFormData{Action, CSRF string} */}}
+{{define "moderationactions"}}<form method="post" action="{{.Action}}" class="inline-form" novalidate>{{template "csrffield" .CSRF}}<input type="hidden" name="decision" value="approve"><button class="btn" type="submit">Approve</button></form>
+<form method="post" action="{{.Action}}" class="inline-form" novalidate>{{template "csrffield" .CSRF}}<input type="hidden" name="decision" value="reject"><button class="btn" type="submit">Reject</button></form>{{end}}
+
+{{define "hideaction"}}<form method="post" action="{{.Action}}" class="inline-form" novalidate>{{template "csrffield" .CSRF}}<button class="btn" type="submit">Hide</button></form>{{end}}
+
+{{/* AdminListData{Title string; Lead, Table(rendered), Extra template.HTML; BackHref, BackLabel string} */}}
+{{define "adminlist"}}
+<section class="container">
+  <h1>{{.Title}}</h1>
+  {{.Lead}}
+  {{template "admintable" .Table}}
+  {{.Extra}}
+  {{if .BackHref}}<p><a href="{{.BackHref}}">{{.BackLabel}}</a></p>{{end}}
+</section>
+{{end}}
+
+{{/* UserStatusActionData{UserID int64; Action, CSRF string; Suspend bool} */}}
+{{define "userstatusaction"}}
+{{if .Suspend}}
+<form method="post" action="{{.Action}}" class="inline-form" novalidate>
+  {{template "csrffield" .CSRF}}
+  <input type="hidden" name="status" value="disabled">
+  <label for="{{fieldid (printf "reason-%d" .UserID)}}">Reason</label>
+  <input id="{{fieldid (printf "reason-%d" .UserID)}}" name="reason" type="text" maxlength="500" required>
+  <button class="btn" type="submit">Suspend</button>
+</form>
+{{else}}
+<form method="post" action="{{.Action}}" class="inline-form" novalidate>
+  {{template "csrffield" .CSRF}}
+  <input type="hidden" name="status" value="active">
+  <input type="hidden" name="reason" value="restored by admin">
+  <button class="btn" type="submit">Restore</button>
+</form>
+{{end}}
+{{end}}

@@ -1,0 +1,38 @@
+{{define "adminpayments"}}
+<section class="container">
+  <h1>Platform balances</h1>
+  {{if not .Balances}}
+  <p class="muted">No ledger activity yet.</p>
+  {{else}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">Account</th><th scope="col">Currency</th><th scope="col">Balance</th></tr></thead>
+    <tbody>{{range .Balances}}<tr><td>{{.Kind}}</td><td>{{.Currency}}</td><td>{{.Amount}}</td></tr>{{end}}</tbody>
+  </table>
+  </div>
+  {{end}}
+
+  <h2>Reconciliation exceptions</h2>
+  {{if not .DeadJobs}}
+  <p class="muted">No dead-lettered webhook jobs.</p>
+  {{else}}
+  <p class="hint">These webhook events exhausted their retries and were never applied; they need manual review.</p>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">Job ID</th><th scope="col">Attempts</th><th scope="col">Last error</th><th scope="col">Updated</th><th scope="col">Action</th></tr></thead>
+    <tbody>
+    {{range .DeadJobs}}
+    <tr><td>{{.ID}}</td><td>{{.Attempts}}</td><td>{{.LastError}}</td><td>{{.Updated}}</td><td>
+      <form method="post" action="/admin/jobs/{{.ID}}/retry" class="inline-form" novalidate>
+        {{template "csrffield" $.CSRF}}
+        <button class="btn" type="submit">Retry</button>
+      </form>
+    </td></tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{end}}
+  <p><a href="/admin">Back to admin</a></p>
+</section>
+{{end}}

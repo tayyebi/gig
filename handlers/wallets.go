@@ -3,7 +3,6 @@ package handlers
 import (
 	"errors"
 	"fmt"
-	"html"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -11,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/tayyebi/gig/components"
 	"github.com/tayyebi/gig/services"
 	"github.com/tayyebi/gig/store"
 )
@@ -27,46 +27,32 @@ var evmAddressPattern = regexp.MustCompile(`^0x[0-9a-fA-F]{40}$`)
 func (s *Server) walletSettings(w http.ResponseWriter, r *http.Request) {
 	u := s.userFrom(r)
 	sess := s.sessionFrom(r)
-	if s.Wallet == nil {
-		s.render(w, r, http.StatusOK, pageWithRawBody("Payout wallets",
-			`<section class="container"><h1>Payout wallets</h1><p>Wallet payouts are not enabled on this deployment yet.</p></section>`))
-		return
+	data := components.SellerWalletData{
+		Enabled:      s.Wallet != nil,
+		CSRF:         sess.CSRF,
+		CooldownText: s.Cfg.WalletChangeCooldown.String(),
 	}
-
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Payout wallets</h1>`)
-	for _, network := range []string{"base", "polygon"} {
-		for _, asset := range []string{"usdc", "usdt"} {
-			if wallet, err := s.Store.GetConfirmedWallet(r.Context(), u.ID, network, asset); err == nil {
-				status := "confirmed, in cooling-off period"
-				if wallet.IsPayoutEligible(time.Now()) {
-					status = "confirmed, eligible for payout"
+	if s.Wallet != nil {
+		for _, network := range []string{"base", "polygon"} {
+			for _, asset := range []string{"usdc", "usdt"} {
+				if wallet, err := s.Store.GetConfirmedWallet(r.Context(), u.ID, network, asset); err == nil {
+					status := "confirmed, in cooling-off period"
+					if wallet.IsPayoutEligible(time.Now()) {
+						status = "confirmed, eligible for payout"
+					}
+					data.Wallets = append(data.Wallets, components.SellerWalletRow{
+						Asset: strings.ToUpper(asset), Network: network, Status: status,
+					})
 				}
-				sb.WriteString(fmt.Sprintf(`<p>%s %s: wallet on file (%s)</p>`,
-					html.EscapeString(strings.ToUpper(asset)), html.EscapeString(network), html.EscapeString(status)))
 			}
 		}
 	}
-	sb.WriteString(fmt.Sprintf(`<h2>Add or change a wallet</h2>
-<p class="help">Changing a wallet requires confirming it by email, and a %s cooling-off period after confirmation before it becomes payout-eligible.</p>
-<form method="post" action="/sell/wallet" novalidate>
-%s
-<label for="network">Network</label>
-<select id="network" name="network" required>
-<option value="base">Base</option>
-<option value="polygon">Polygon</option>
-</select>
-<label for="asset">Asset</label>
-<select id="asset" name="asset" required>
-<option value="usdc">USDC</option>
-<option value="usdt">USDT</option>
-</select>
-<label for="address">Wallet address</label>
-<input id="address" name="address" type="text" required pattern="0x[0-9a-fA-F]{40}" maxlength="42" placeholder="0x...">
-<button class="btn" type="submit">Submit wallet</button>
-</form>
-</section>`, s.Cfg.WalletChangeCooldown.String(), csrfInputHTML(sess.CSRF)))
-	s.render(w, r, http.StatusOK, pageWithRawBody("Payout wallets", sb.String()))
+	body, err := components.SellerWalletPage(data)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Payout wallets", Body: body})
 }
 
 // submitWallet validates and stores a new pending wallet, then emails a
@@ -221,8 +207,12 @@ func (s *Server) payoutRequestForm(w http.ResponseWriter, r *http.Request) {
 	u := s.userFrom(r)
 	sess := s.sessionFrom(r)
 	if s.Wallet == nil {
-		s.render(w, r, http.StatusOK, pageWithRawBody("Request payout",
-			`<section class="container"><h1>Request payout</h1><p>Wallet payouts are not enabled on this deployment yet.</p></section>`))
+		body, err := components.SellerPayoutsPage(components.SellerPayoutsData{})
+		if err != nil {
+			s.renderError(w, err)
+			return
+		}
+		s.render(w, r, http.StatusOK, components.PageData{Title: "Request payout", Body: body})
 		return
 	}
 
@@ -232,18 +222,7 @@ func (s *Server) payoutRequestForm(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Request payout</h1>`)
-	if paused {
-		sb.WriteString(`<p><strong>Payouts are paused platform-wide right now.</strong> You can still request one; it will be held until payouts resume.</p>`)
-	}
-
-	type eligibleWallet struct {
-		Network, Asset string
-		WalletID       int64
-		AvailableMinor int64
-	}
-	var eligible []eligibleWallet
+	data := components.SellerPayoutsData{Enabled: true, CSRF: sess.CSRF, Paused: paused}
 	for _, network := range []string{"base", "polygon"} {
 		for _, asset := range []string{"usdc", "usdt"} {
 			wallet, err := s.Store.GetConfirmedWallet(r.Context(), u.ID, network, asset)
@@ -255,24 +234,10 @@ func (s *Server) payoutRequestForm(w http.ResponseWriter, r *http.Request) {
 				s.renderError(w, err)
 				return
 			}
-			eligible = append(eligible, eligibleWallet{Network: network, Asset: asset, WalletID: wallet.ID, AvailableMinor: available})
-		}
-	}
-	if len(eligible) == 0 {
-		sb.WriteString(`<p>No confirmed, payout-eligible wallet on file yet. <a href="/sell/wallet">Add or confirm a wallet</a> first.</p>`)
-	} else {
-		for _, e := range eligible {
-			sb.WriteString(fmt.Sprintf(`<h2>%s %s</h2>
-<p>Available: $%.2f</p>
-<form method="post" action="/sell/payouts/request" novalidate>
-%s
-<input type="hidden" name="wallet_id" value="%d">
-<label for="amount-%d">Amount (USD)</label>
-<input id="amount-%d" name="amount" type="text" required inputmode="decimal" placeholder="0.00">
-<button class="btn" type="submit">Request payout</button>
-</form>`,
-				html.EscapeString(strings.ToUpper(e.Asset)), html.EscapeString(e.Network),
-				float64(e.AvailableMinor)/100, csrfInputHTML(sess.CSRF), e.WalletID, e.WalletID, e.WalletID))
+			data.Eligible = append(data.Eligible, components.SellerPayoutEligibleWallet{
+				Network: network, Asset: strings.ToUpper(asset), WalletID: wallet.ID,
+				AvailableText: fmt.Sprintf("$%.2f", float64(available)/100),
+			})
 		}
 	}
 
@@ -281,21 +246,39 @@ func (s *Server) payoutRequestForm(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, err)
 		return
 	}
-	sb.WriteString(`<h2>Payout history</h2>`)
-	if len(payouts) == 0 {
-		sb.WriteString(`<p>No payouts requested yet.</p>`)
-	} else {
-		sb.WriteString(`<table><thead><tr><th>Requested</th><th>Amount</th><th>Network/asset</th><th>Status</th></tr></thead><tbody>`)
-		for _, p := range payouts {
-			sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>$%.2f %s</td><td>%s / %s</td><td>%s</td></tr>`,
-				html.EscapeString(p.CreatedAt.Format("2006-01-02 15:04")),
-				float64(p.AmountMinor)/100, html.EscapeString(p.Currency),
-				html.EscapeString(p.Network), html.EscapeString(p.Asset), html.EscapeString(p.Status)))
-		}
-		sb.WriteString(`</tbody></table>`)
+	for _, p := range payouts {
+		data.Payouts = append(data.Payouts, components.SellerPayoutRow{
+			CreatedAt:  p.CreatedAt.Format("2006-01-02 15:04"),
+			AmountText: fmt.Sprintf("$%.2f %s", float64(p.AmountMinor)/100, p.Currency),
+			Network:    p.Network,
+			Asset:      p.Asset,
+			StatusBadge: components.StatusBadge{
+				Label: p.Status,
+				Kind:  payoutStatusBadgeKind(p.Status),
+			},
+		})
 	}
-	sb.WriteString(`</section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Request payout", sb.String()))
+
+	body, err := components.SellerPayoutsPage(data)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Request payout", Body: body})
+}
+
+// payoutStatusBadgeKind maps a payout status to a StatusBadge color kind.
+func payoutStatusBadgeKind(status string) string {
+	switch status {
+	case store.PayoutCompleted:
+		return "success"
+	case store.PayoutCanceled:
+		return "danger"
+	case store.PayoutNeedsManualReview:
+		return "accent"
+	default:
+		return "muted"
+	}
 }
 
 // submitPayoutRequest validates the requested amount against the seller's

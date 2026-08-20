@@ -1,0 +1,57 @@
+{{define "adminorderpayments"}}
+<section class="container">
+  <h1>Order #{{.OrderID}} payments</h1>
+  {{if not .HasIntent}}
+  <p class="muted">No payment intent yet.</p>
+  {{else}}
+  <dl>
+    <dt>Provider</dt><dd>{{.Provider}}</dd>
+    <dt>Provider reference</dt><dd>{{.ProviderRef}}</dd>
+    <dt>Status</dt><dd>{{.Status}}</dd>
+    <dt>Amount</dt><dd>{{.AmountText}}</dd>
+  </dl>
+  {{if .ShowRefund}}
+  <h2>Refund</h2>
+  <p class="hint">Issues a full refund of {{.RefundAmountText}} through {{.Provider}}. There is no partial-refund support yet.</p>
+  <form method="post" action="/admin/orders/{{.OrderID}}/refund" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "reason"}}">Reason</label>
+      <input id="{{fieldid "reason"}}" name="reason" type="text" required maxlength="500">
+    </div>
+    <button class="btn" type="submit">Refund order</button>
+  </form>
+  {{end}}
+
+  {{if .OnChain}}
+  <h2>On-chain payment detail</h2>
+  {{with .OnChain}}
+  {{if .NoProvider}}
+  <p class="hint">No configured provider adapter to re-check this payment against.</p>
+  {{else if .LiveCheckError}}
+  <p class="hint">Live provider check failed: {{.LiveCheckError}}</p>
+  {{else}}
+  <dl>
+    <dt>Live provider status</dt><dd>{{.LiveStatus}}</dd>
+    {{if .ChargeRef}}<dt>{{.ChargeLabel}}</dt><dd><code class="secret">{{.ChargeRef}}</code></dd>{{end}}
+    {{if .HasFailure}}<dt>Failure</dt><dd>{{.FailureCode}} {{.FailureReason}}</dd>{{end}}
+  </dl>
+  {{end}}
+  {{if .AttemptsError}}
+  <p class="hint">Could not load payment attempt history: {{.AttemptsError}}</p>
+  {{else if not .Attempts}}
+  <p class="hint">No recorded provider status observations (webhook history) for this payment yet.</p>
+  {{else}}
+  <h3>Provider status history</h3>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">When</th><th scope="col">Provider status</th><th scope="col">Failure code</th><th scope="col">Failure message</th></tr></thead>
+    <tbody>{{range .Attempts}}<tr><td>{{.When}}</td><td>{{.Status}}</td><td>{{.FailureCode}}</td><td>{{.FailureMessage}}</td></tr>{{end}}</tbody>
+  </table>
+  </div>
+  {{end}}
+  {{end}}
+  {{end}}
+  {{end}}
+</section>
+{{end}}

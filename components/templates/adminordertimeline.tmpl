@@ -1,0 +1,40 @@
+{{define "adminordertimeline"}}
+<section class="container">
+  <h1>Order #{{.OrderID}} timeline</h1>
+  {{if not .HasIntent}}
+  <p class="muted">No payment intent yet.</p>
+  {{else}}
+  <h2>Payment intent {{.IntentID}}</h2>
+  <dl>
+    <dt>Provider</dt><dd>{{.Provider}}</dd>
+    <dt>Status</dt><dd>{{.Status}}</dd>
+    <dt>Created</dt><dd>{{.Created}}</dd>
+  </dl>
+
+  <h2>Attempt history</h2>
+  {{if not .Attempts}}
+  <p class="muted">No recorded attempts.</p>
+  {{else}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">When</th><th scope="col">Provider status</th><th scope="col">Failure</th></tr></thead>
+    <tbody>{{range .Attempts}}<tr><td>{{.When}}</td><td>{{.Status}}</td><td>{{.Failure}}</td></tr>{{end}}</tbody>
+  </table>
+  </div>
+  {{end}}
+
+  <h2>Webhook events</h2>
+  {{if not .Events}}
+  <p class="muted">No matched webhook events.</p>
+  {{else}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">Event ID</th><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Attempts</th></tr></thead>
+    <tbody>{{range .Events}}<tr><td>{{.EventID}}</td><td>{{.EventType}}</td><td>{{.Status}}</td><td>{{.Attempts}}</td></tr>{{end}}</tbody>
+  </table>
+  </div>
+  {{end}}
+  {{end}}
+  <p><a href="/admin/payments">Back to payments</a></p>
+</section>
+{{end}}

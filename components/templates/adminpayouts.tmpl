@@ -1,0 +1,48 @@
+{{define "adminpayouts"}}
+<section class="container">
+  <h1>Payouts</h1>
+  {{if .Paused}}<p><strong>Payouts are paused.</strong></p>{{end}}
+  <form method="post" action="/admin/payouts/pause" novalidate>
+    {{template "csrffield" .CSRF}}
+    <input type="hidden" name="action" value="{{.PauseAction}}">
+    <button class="btn" type="submit">{{.PauseLabel}}</button>
+  </form>
+
+  {{range .Groups}}
+  <h2>{{.Status}}</h2>
+  {{if not .Rows}}
+  <p class="muted">None.</p>
+  {{else}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">ID</th><th scope="col">Seller</th><th scope="col">Amount</th><th scope="col">Network/Asset</th><th scope="col">Action</th></tr></thead>
+    <tbody>
+    {{range .Rows}}
+    <tr>
+      <td>{{.ID}}</td><td>{{.SellerID}}</td><td>{{.AmountText}}</td><td>{{.Network}}/{{.Asset}}</td>
+      <td>
+      {{if eq .ActionKind "approve"}}
+      <form method="post" action="/admin/payouts/{{.ID}}/approve" novalidate>
+        {{template "csrffield" $.CSRF}}
+        <button class="btn" type="submit">Approve</button>
+      </form>
+      {{else if eq .ActionKind "complete"}}
+      <form method="post" action="/admin/payouts/{{.ID}}/complete" novalidate>
+        {{template "csrffield" $.CSRF}}
+        <input name="tx_hash" placeholder="transaction hash" required>
+        <button class="btn" type="submit">Mark completed</button>
+      </form>
+      {{else}}
+      &mdash;
+      {{end}}
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{end}}
+  {{end}}
+  <p><a href="/admin">Back to admin</a></p>
+</section>
+{{end}}

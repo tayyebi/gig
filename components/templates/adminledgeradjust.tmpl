@@ -1,0 +1,53 @@
+{{define "adminledgeradjust"}}
+<section class="container">
+  <h1>Ledger adjustment</h1>
+  <p class="hint">Moves funds between two ledger accounts with a required reason. Every adjustment is recorded in the audit log and posted as a balanced double-entry transaction; there is no undo.</p>
+  <form method="post" action="/admin/ledger/adjust" novalidate>
+    {{template "csrffield" .CSRF}}
+    <fieldset>
+      <legend>From account</legend>
+      <div class="field">
+        <label for="{{fieldid "from_kind"}}">Kind</label>
+        <select id="{{fieldid "from_kind"}}" name="from_kind">
+          {{range .AccountKinds}}<option value="{{.}}">{{.}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label for="{{fieldid "from_owner"}}">Owner user ID (blank for platform accounts)</label>
+        <input id="{{fieldid "from_owner"}}" name="from_owner" type="number" min="1">
+      </div>
+    </fieldset>
+    <fieldset>
+      <legend>To account</legend>
+      <div class="field">
+        <label for="{{fieldid "to_kind"}}">Kind</label>
+        <select id="{{fieldid "to_kind"}}" name="to_kind">
+          {{range .AccountKinds}}<option value="{{.}}">{{.}}</option>{{end}}
+        </select>
+      </div>
+      <div class="field">
+        <label for="{{fieldid "to_owner"}}">Owner user ID (blank for platform accounts)</label>
+        <input id="{{fieldid "to_owner"}}" name="to_owner" type="number" min="1">
+      </div>
+    </fieldset>
+    <div class="field">
+      <label for="{{fieldid "amount"}}">Amount (minor units)</label>
+      <input id="{{fieldid "amount"}}" name="amount" type="number" min="1" required>
+    </div>
+    <div class="field">
+      <label for="{{fieldid "currency"}}">Currency</label>
+      <input id="{{fieldid "currency"}}" name="currency" type="text" value="usd" required>
+    </div>
+    <div class="field">
+      <label for="{{fieldid "order_id"}}">Related order ID (optional)</label>
+      <input id="{{fieldid "order_id"}}" name="order_id" type="number" min="1">
+    </div>
+    <div class="field">
+      <label for="{{fieldid "reason"}}">Reason</label>
+      <input id="{{fieldid "reason"}}" name="reason" type="text" maxlength="500" required>
+    </div>
+    <button class="btn btn-primary" type="submit">Post adjustment</button>
+  </form>
+  <p><a href="/admin">Back to admin</a></p>
+</section>
+{{end}}

@@ -5,7 +5,6 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"html"
 	htmltemplate "html/template"
 	"io"
 	"net/http"
@@ -19,12 +18,6 @@ import (
 	"github.com/tayyebi/gig/services"
 	"github.com/tayyebi/gig/store"
 )
-
-// pageWithRawBody wraps a pre-escaped HTML fragment in a PageData, for the
-// small hand-built admin payment views below.
-func pageWithRawBody(title, body string) components.PageData {
-	return components.PageData{Title: title, Body: htmltemplate.HTML(body)}
-}
 
 // paymentWebhookJobKind is the job kind the worker registers a handler for
 // (main.paymentWebhookProcessKind); duplicated as a string literal since
@@ -170,15 +163,16 @@ func (s *Server) btcpayInvoiceStatus(w http.ResponseWriter, r *http.Request) {
 	if intent.Status == services.PaymentProcessing {
 		statusText = "payment detected, waiting for confirmation"
 	}
-	body := fmt.Sprintf(`<section class="container">
-<h1>Bitcoin / Lightning payment</h1>
-<p>Status: %s</p>
-<p class="help">This page refreshes automatically. Once BTCPay confirms your payment, order #%d will move to in progress.</p>
-<p><a href="%s">Continue to your Bitcoin/Lightning invoice</a></p>
-<p><a href="/orders/%d">Back to order</a></p>
-</section>`, html.EscapeString(statusText), access.Order.ID, html.EscapeString(intent.CheckoutURL), access.Order.ID)
-
-	p := pageWithRawBody("Bitcoin / Lightning payment", body)
+	body, err := components.BTCPayInvoicePage(components.BTCPayInvoiceData{
+		StatusText:  statusText,
+		OrderID:     access.Order.ID,
+		CheckoutURL: intent.CheckoutURL,
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	p := components.PageData{Title: "Bitcoin / Lightning payment", Body: body}
 	p.MetaRefresh = 5
 	s.render(w, r, http.StatusOK, p)
 }
@@ -223,23 +217,25 @@ func (s *Server) evmDepositStatus(w http.ResponseWriter, r *http.Request) {
 	// address out of (falling back to the <code> block for copy-paste)
 	// keeps this correct without guessing at token decimals.
 	qrPayload := fmt.Sprintf("%s|%s|%s %s", ep.ChainName, ep.TreasuryAddress, formatMoney(intent.AmountMinor, currency), currency)
-	qrHTML := ""
+	var qrHTML htmltemplate.HTML
 	if svg, err := services.EncodeQRCodeSVG(qrPayload, 4); err == nil {
-		qrHTML = fmt.Sprintf(`<div class="qr-code">%s</div>`, svg)
+		qrHTML = htmltemplate.HTML(svg)
 	}
 
-	body := fmt.Sprintf(`<section class="container">
-<h1>Stablecoin deposit</h1>
-<p>Status: %s</p>
-<p>Send exactly <strong>%s</strong> worth of USDC to this address on %s:</p>
-%s
-<p><code>%s</code></p>
-<p class="help">This page refreshes automatically. Once the transfer reaches %d confirmations, order #%d will move to in progress. Send only from a wallet you control, and only this exact amount &mdash; the platform cannot distinguish deposits by any other means.</p>
-<p><a href="/orders/%d">Back to order</a></p>
-</section>`, html.EscapeString(statusText), html.EscapeString(formatMoney(intent.AmountMinor, currency)),
-		html.EscapeString(ep.ChainName), qrHTML, html.EscapeString(ep.TreasuryAddress), ep.RequiredConfirmations, access.Order.ID, access.Order.ID)
-
-	p := pageWithRawBody("Stablecoin deposit", body)
+	body, err := components.EVMDepositPage(components.EVMDepositData{
+		StatusText:    statusText,
+		AmountText:    formatMoney(intent.AmountMinor, currency),
+		ChainName:     ep.ChainName,
+		QR:            qrHTML,
+		Address:       ep.TreasuryAddress,
+		Confirmations: ep.RequiredConfirmations,
+		OrderID:       access.Order.ID,
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	p := components.PageData{Title: "Stablecoin deposit", Body: body}
 	p.MetaRefresh = 5
 	s.render(w, r, http.StatusOK, p)
 }
@@ -440,41 +436,31 @@ func (s *Server) adminPayments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var sb strings.Builder
-	sb.WriteString("<section class=\"container\"><h1>Platform balances</h1>")
-	if len(balances) == 0 {
-		sb.WriteString("<p>No ledger activity yet.</p>")
-	} else {
-		sb.WriteString("<table><thead><tr><th scope=\"col\">Account</th><th scope=\"col\">Currency</th><th scope=\"col\">Balance</th></tr></thead><tbody>")
-		for _, b := range balances {
-			currency := strings.ToUpper(b.Currency)
-			sb.WriteString(fmt.Sprintf("<tr><td>%s</td><td>%s</td><td>%s</td></tr>",
-				html.EscapeString(b.Kind), html.EscapeString(currency), html.EscapeString(formatMoney(b.BalanceMinor, currency))))
-		}
-		sb.WriteString("</tbody></table>")
+	data := components.AdminPaymentsData{CSRF: s.csrfFor(r)}
+	for _, b := range balances {
+		currency := strings.ToUpper(b.Currency)
+		data.Balances = append(data.Balances, components.AdminBalanceRow{
+			Kind: b.Kind, Currency: currency, Amount: formatMoney(b.BalanceMinor, currency),
+		})
 	}
-
-	sb.WriteString("<h2>Reconciliation exceptions</h2>")
-	if len(deadJobs) == 0 {
-		sb.WriteString("<p>No dead-lettered webhook jobs.</p>")
-	} else {
-		sb.WriteString("<p>These webhook events exhausted their retries and were never applied; they need manual review.</p>")
-		sb.WriteString("<table><thead><tr><th scope=\"col\">Job ID</th><th scope=\"col\">Attempts</th><th scope=\"col\">Last error</th><th scope=\"col\">Updated</th><th scope=\"col\">Action</th></tr></thead><tbody>")
-		for _, j := range deadJobs {
-			lastError := ""
-			if j.LastError != nil {
-				lastError = *j.LastError
-			}
-			sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td>%d/%d</td><td>%s</td><td>%s</td><td>", j.ID, j.Attempts, j.MaxAttempts,
-				html.EscapeString(lastError), html.EscapeString(j.UpdatedAt.Format("2006-01-02 15:04"))))
-			sb.WriteString(fmt.Sprintf(`<form method="post" action="/admin/jobs/%d/retry" novalidate>%s<button class="btn" type="submit">Retry</button></form>`, j.ID, csrfInputHTML(s.csrfFor(r))))
-			sb.WriteString("</td></tr>")
+	for _, j := range deadJobs {
+		lastError := ""
+		if j.LastError != nil {
+			lastError = *j.LastError
 		}
-		sb.WriteString("</tbody></table>")
+		data.DeadJobs = append(data.DeadJobs, components.AdminDeadJobRow{
+			ID:        j.ID,
+			Attempts:  fmt.Sprintf("%d/%d", j.Attempts, j.MaxAttempts),
+			LastError: lastError,
+			Updated:   j.UpdatedAt.Format("2006-01-02 15:04"),
+		})
 	}
-
-	sb.WriteString("<p><a href=\"/admin\">Back to admin</a></p></section>")
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - payments", sb.String()))
+	body, err := components.AdminPaymentsPage(data)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - payments", Body: body})
 }
 
 func (s *Server) adminOrderPayments(w http.ResponseWriter, r *http.Request) {
@@ -485,8 +471,12 @@ func (s *Server) adminOrderPayments(w http.ResponseWriter, r *http.Request) {
 	}
 	intent, err := s.Store.LatestPaymentIntentForOrder(r.Context(), orderID)
 	if errors.Is(err, store.ErrNotFound) {
-		s.render(w, r, http.StatusOK, pageWithRawBody("Admin - order payments",
-			fmt.Sprintf("<section class=\"container\"><h1>Order #%d payments</h1><p>No payment intent yet.</p></section>", orderID)))
+		body, err := components.AdminOrderPaymentsPage(components.AdminOrderPaymentsData{OrderID: orderID})
+		if err != nil {
+			s.renderError(w, err)
+			return
+		}
+		s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - order payments", Body: body})
 		return
 	}
 	if err != nil {
@@ -494,24 +484,18 @@ func (s *Server) adminOrderPayments(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	currency := strings.ToUpper(intent.Currency)
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(`<section class="container"><h1>Order #%d payments</h1>
-<dl>
-<dt>Provider</dt><dd>%s</dd>
-<dt>Provider reference</dt><dd>%s</dd>
-<dt>Status</dt><dd>%s</dd>
-<dt>Amount</dt><dd>%s</dd>
-</dl>`, orderID, html.EscapeString(intent.Provider), html.EscapeString(intent.ProviderRef),
-		html.EscapeString(intent.Status), html.EscapeString(formatMoney(intent.AmountMinor, currency))))
+	data := components.AdminOrderPaymentsData{
+		OrderID:     orderID,
+		CSRF:        s.csrfFor(r),
+		HasIntent:   true,
+		Provider:    intent.Provider,
+		ProviderRef: intent.ProviderRef,
+		Status:      intent.Status,
+		AmountText:  formatMoney(intent.AmountMinor, currency),
+	}
 	if intent.Status == services.PaymentSucceeded && intent.ChargeRef != "" {
-		sb.WriteString(fmt.Sprintf(`<h2>Refund</h2>
-<p class="help">Issues a full refund of %s through %s. There is no partial-refund support yet.</p>
-<form method="post" action="/admin/orders/%d/refund" novalidate>
-%s
-<label for="reason">Reason</label>
-<input id="reason" name="reason" type="text" required maxlength="500">
-<button class="btn" type="submit">Refund order</button>
-</form>`, html.EscapeString(formatMoney(intent.AmountMinor, currency)), html.EscapeString(intent.Provider), orderID, csrfInputHTML(s.csrfFor(r))))
+		data.ShowRefund = true
+		data.RefundAmountText = formatMoney(intent.AmountMinor, currency)
 	}
 
 	// BTCPay (webhook-driven, so PaidPartial/PaidLate underpayment cases show
@@ -520,11 +504,15 @@ func (s *Server) adminOrderPayments(w http.ResponseWriter, r *http.Request) {
 	// order and payment timelines" PLAN.md section 15 asks for: a live
 	// re-check against the provider plus the recorded attempt history.
 	if intent.Provider == "btcpay" || strings.HasPrefix(intent.Provider, "evm-") {
-		s.renderOnChainPaymentDetail(r, &sb, intent)
+		data.OnChain = s.onChainPaymentDetail(r, intent)
 	}
 
-	sb.WriteString(`</section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - order payments", sb.String()))
+	body, err := components.AdminOrderPaymentsPage(data)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - order payments", Body: body})
 }
 
 // renderOnChainPaymentDetail appends BTCPay- and EVM-specific admin detail
@@ -532,49 +520,44 @@ func (s *Server) adminOrderPayments(w http.ResponseWriter, r *http.Request) {
 // the provider (which, for EVM, is the only place a transaction hash and
 // confirmation-derived status ever come from, since there are no inbound
 // webhooks) plus the recorded payment_attempts history, if any.
-func (s *Server) renderOnChainPaymentDetail(r *http.Request, sb *strings.Builder, intent *store.PaymentIntent) {
+func (s *Server) onChainPaymentDetail(r *http.Request, intent *store.PaymentIntent) *components.OnChainPaymentDetail {
 	ctx := r.Context()
+	d := &components.OnChainPaymentDetail{}
 
-	sb.WriteString(`<h2>On-chain payment detail</h2>`)
 	if provider, ok := s.Providers.Get(intent.Provider); ok && intent.ProviderRef != "" {
 		live, err := provider.Payment(ctx, intent.ProviderRef)
 		if err != nil {
-			sb.WriteString(fmt.Sprintf(`<p class="help">Live provider check failed: %s</p>`, html.EscapeString(err.Error())))
+			d.LiveCheckError = err.Error()
 		} else {
-			sb.WriteString(`<dl>`)
-			sb.WriteString(fmt.Sprintf(`<dt>Live provider status</dt><dd>%s</dd>`, html.EscapeString(live.Status)))
+			d.LiveStatus = live.Status
 			if live.ChargeRef != "" {
-				label := "Charge reference"
+				d.ChargeLabel = "Charge reference"
 				if strings.HasPrefix(intent.Provider, "evm-") {
-					label = "Transaction hash"
+					d.ChargeLabel = "Transaction hash"
 				}
-				sb.WriteString(fmt.Sprintf(`<dt>%s</dt><dd><code>%s</code></dd>`, label, html.EscapeString(live.ChargeRef)))
+				d.ChargeRef = live.ChargeRef
 			}
-			if live.FailureCode != "" || live.FailureReason != "" {
-				sb.WriteString(fmt.Sprintf(`<dt>Failure</dt><dd>%s %s</dd>`, html.EscapeString(live.FailureCode), html.EscapeString(live.FailureReason)))
-			}
-			sb.WriteString(`</dl>`)
+			d.FailureCode = live.FailureCode
+			d.FailureReason = live.FailureReason
 		}
 	} else {
-		sb.WriteString(`<p class="help">No configured provider adapter to re-check this payment against.</p>`)
+		d.NoProvider = true
 	}
 
 	attempts, err := s.Store.ListPaymentAttemptsForIntent(ctx, intent.ID)
 	if err != nil {
-		sb.WriteString(fmt.Sprintf(`<p class="help">Could not load payment attempt history: %s</p>`, html.EscapeString(err.Error())))
-		return
+		d.AttemptsError = err.Error()
+		return d
 	}
-	if len(attempts) == 0 {
-		sb.WriteString(`<p class="help">No recorded provider status observations (webhook history) for this payment yet.</p>`)
-		return
-	}
-	sb.WriteString(`<h3>Provider status history</h3><table><thead><tr><th scope="col">When</th><th scope="col">Provider status</th><th scope="col">Failure code</th><th scope="col">Failure message</th></tr></thead><tbody>`)
 	for _, a := range attempts {
-		sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td><td>%s</td></tr>`,
-			html.EscapeString(a.CreatedAt.Format("2006-01-02 15:04:05")), html.EscapeString(a.ProviderStatus),
-			html.EscapeString(a.FailureCode), html.EscapeString(a.FailureMessage)))
+		d.Attempts = append(d.Attempts, components.PaymentAttemptRow{
+			When:           a.CreatedAt.Format("2006-01-02 15:04:05"),
+			Status:         a.ProviderStatus,
+			FailureCode:    a.FailureCode,
+			FailureMessage: a.FailureMessage,
+		})
 	}
-	sb.WriteString(`</tbody></table>`)
+	return d
 }
 
 // adminPayouts lists queued and manual-review payouts, and the emergency
@@ -588,16 +571,10 @@ func (s *Server) adminPayouts(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, err)
 		return
 	}
-	var sb strings.Builder
-	sb.WriteString("<section class=\"container\"><h1>Payouts</h1>")
-	pauseLabel, pauseAction := "Pause payouts", "pause"
+	data := components.AdminPayoutsData{CSRF: s.csrfFor(r), Paused: paused, PauseLabel: "Pause payouts", PauseAction: "pause"}
 	if paused {
-		sb.WriteString("<p><strong>Payouts are paused.</strong></p>")
-		pauseLabel, pauseAction = "Resume payouts", "resume"
+		data.PauseLabel, data.PauseAction = "Resume payouts", "resume"
 	}
-	sb.WriteString(fmt.Sprintf(`<form method="post" action="/admin/payouts/pause" novalidate>
-%s<input type="hidden" name="action" value="%s"><button class="btn" type="submit">%s</button></form>`,
-		csrfInputHTML(s.csrfFor(r)), pauseAction, html.EscapeString(pauseLabel)))
 
 	for _, status := range []string{store.PayoutNeedsManualReview, store.PayoutReadyForManualExecution, store.PayoutQueued} {
 		payouts, err := s.Store.ListPayoutsByStatus(r.Context(), status, 50)
@@ -605,30 +582,29 @@ func (s *Server) adminPayouts(w http.ResponseWriter, r *http.Request) {
 			s.renderError(w, err)
 			return
 		}
-		sb.WriteString(fmt.Sprintf("<h2>%s</h2>", html.EscapeString(status)))
-		if len(payouts) == 0 {
-			sb.WriteString("<p>None.</p>")
-			continue
+		group := components.AdminPayoutGroup{Status: status}
+		actionKind := ""
+		switch status {
+		case store.PayoutNeedsManualReview:
+			actionKind = "approve"
+		case store.PayoutReadyForManualExecution:
+			actionKind = "complete"
 		}
-		sb.WriteString("<table><thead><tr><th scope=\"col\">ID</th><th scope=\"col\">Seller</th><th scope=\"col\">Amount</th><th scope=\"col\">Network/Asset</th><th scope=\"col\">Action</th></tr></thead><tbody>")
 		for _, p := range payouts {
 			currency := strings.ToUpper(p.Currency)
-			sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td>%d</td><td>%s</td><td>%s/%s</td><td>",
-				p.ID, p.SellerID, html.EscapeString(formatMoney(p.AmountMinor, currency)), html.EscapeString(p.Network), html.EscapeString(p.Asset)))
-			switch status {
-			case store.PayoutNeedsManualReview:
-				sb.WriteString(fmt.Sprintf(`<form method="post" action="/admin/payouts/%d/approve" novalidate>%s<button class="btn" type="submit">Approve</button></form>`, p.ID, csrfInputHTML(s.csrfFor(r))))
-			case store.PayoutReadyForManualExecution:
-				sb.WriteString(fmt.Sprintf(`<form method="post" action="/admin/payouts/%d/complete" novalidate>%s<input name="tx_hash" placeholder="transaction hash" required><button class="btn" type="submit">Mark completed</button></form>`, p.ID, csrfInputHTML(s.csrfFor(r))))
-			default:
-				sb.WriteString("&mdash;")
-			}
-			sb.WriteString("</td></tr>")
+			group.Rows = append(group.Rows, components.AdminPayoutRow{
+				ID: p.ID, SellerID: p.SellerID, AmountText: formatMoney(p.AmountMinor, currency),
+				Network: p.Network, Asset: p.Asset, ActionKind: actionKind,
+			})
 		}
-		sb.WriteString("</tbody></table>")
+		data.Groups = append(data.Groups, group)
 	}
-	sb.WriteString("<p><a href=\"/admin\">Back to admin</a></p></section>")
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - payouts", sb.String()))
+	body, err := components.AdminPayoutsPage(data)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - payouts", Body: body})
 }
 
 // adminPayoutsPause flips the platform-wide emergency pause flag.
@@ -693,10 +669,6 @@ func (s *Server) adminPayoutComplete(w http.ResponseWriter, r *http.Request) {
 	}
 	s.audit(r.Context(), &admin.ID, r, "payout.completed", "payout", strconv.FormatInt(id, 10), map[string]any{"tx_hash": txHash})
 	http.Redirect(w, r, "/admin/payouts", http.StatusSeeOther)
-}
-
-func csrfInputHTML(token string) string {
-	return fmt.Sprintf(`<input type="hidden" name="_csrf" value="%s">`, html.EscapeString(token))
 }
 
 // adminOrderRefund issues a full refund for an order's succeeded payment

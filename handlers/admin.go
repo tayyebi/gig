@@ -4,40 +4,32 @@ import (
 	"encoding/csv"
 	"errors"
 	"fmt"
-	"html"
+	htmltemplate "html/template"
 	"net/http"
 	"strconv"
 	"strings"
 
+	"github.com/tayyebi/gig/components"
 	"github.com/tayyebi/gig/ledger"
 	"github.com/tayyebi/gig/store"
 )
 
 // adminHome is the admin console landing page: a hub linking to every
-// sub-console (moderation, disputes, payments, payouts, settings). Full
-// pages render as hand-built escaped HTML fragments via pageWithRawBody,
-// matching the existing convention in handlers/payments.go rather than
-// introducing a parallel html/template-based admin component tree.
+// sub-console (moderation, disputes, payments, payouts, settings).
 func (s *Server) adminHome(w http.ResponseWriter, r *http.Request) {
-	body := `<section class="container">
-<h1>Admin console</h1>
-<ul>
-<li><a href="/admin/users">Users</a></li>
-<li><a href="/admin/moderation/gigs">Gig moderation</a></li>
-<li><a href="/admin/moderation/media">Media moderation</a></li>
-<li><a href="/admin/moderation/reviews">Review moderation</a></li>
-<li><a href="/admin/moderation/messages">Message moderation</a></li>
-<li><a href="/admin/categories">Categories &amp; tags</a></li>
-<li><a href="/admin/disputes">Disputes</a></li>
-<li><a href="/admin/payments">Payments &amp; reconciliation</a></li>
-<li><a href="/admin/payments/search">Payment search</a></li>
-<li><a href="/admin/payouts">Payouts</a></li>
-<li><a href="/admin/settings">Settings</a></li>
-<li><a href="/admin/ledger/adjust">Ledger adjustment</a></li>
-<li><a href="/admin/audit">Audit log</a></li>
-</ul>
-</section>`
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin console", body))
+	body, err := components.AdminHomePage()
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin console", Body: body})
+}
+
+// escCell wraps plain text as a safe, already-escaped table cell for
+// components.AdminTable, whose Rows are template.HTML so callers can also
+// embed forms and links (built through typed templates elsewhere).
+func escCell(s string) htmltemplate.HTML {
+	return htmltemplate.HTML(htmltemplate.HTMLEscapeString(s))
 }
 
 // ---------------------------------------------------------------------------
@@ -52,47 +44,50 @@ func (s *Server) adminUsers(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, err)
 		return
 	}
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Users</h1>
-<form method="get" action="/admin/users" role="search">
-<label for="q">Search</label>
-<input id="q" name="q" type="search" value="` + html.EscapeString(search) + `">
-<label for="status">Status</label>
-<select id="status" name="status">
-<option value="">Any</option>`)
+
+	statusOptions := []components.FilterOption{{Value: "", Label: "Any", Selected: status == ""}}
 	for _, st := range []string{store.UserActive, store.UserDisabled, store.UserDeleted} {
-		sel := ""
-		if st == status {
-			sel = " selected"
-		}
-		sb.WriteString(fmt.Sprintf(`<option value="%s"%s>%s</option>`, st, sel, st))
+		statusOptions = append(statusOptions, components.FilterOption{Value: st, Label: st, Selected: st == status})
 	}
-	sb.WriteString(`</select>
-<button class="btn" type="submit">Filter</button>
-</form>
-<p><a href="/admin/users/export.csv">Export CSV</a></p>
-<table><thead><tr><th scope="col">ID</th><th scope="col">Name</th><th scope="col">Email</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead><tbody>`)
+	lead, err := components.FilterFormHTML(components.FilterForm{
+		Action: "/admin/users",
+		Fields: []components.FilterField{
+			{Name: "q", Label: "Search", Value: search},
+			{Name: "status", Label: "Status", Options: statusOptions},
+		},
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	lead += htmltemplate.HTML(`<p><a href="/admin/users/export.csv">Export CSV</a></p>`)
+
+	table := components.AdminTable{Columns: []string{"ID", "Name", "Email", "Status", "Action"}}
 	for _, u := range users {
-		sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td>",
-			u.ID, html.EscapeString(u.Name), html.EscapeString(u.Email), html.EscapeString(u.Status)))
-		if u.Status == store.UserActive {
-			sb.WriteString(fmt.Sprintf(`<form method="post" action="/admin/users/%d/status" novalidate>%s
-<input type="hidden" name="status" value="disabled">
-<label for="reason-%d">Reason</label>
-<input id="reason-%d" name="reason" type="text" maxlength="500" required>
-<button class="btn" type="submit">Suspend</button></form>`, u.ID, csrfInputHTML(s.csrfFor(r)), u.ID, u.ID))
-		} else if u.Status == store.UserDisabled {
-			sb.WriteString(fmt.Sprintf(`<form method="post" action="/admin/users/%d/status" novalidate>%s
-<input type="hidden" name="status" value="active">
-<input type="hidden" name="reason" value="restored by admin">
-<button class="btn" type="submit">Restore</button></form>`, u.ID, csrfInputHTML(s.csrfFor(r))))
-		} else {
-			sb.WriteString("&mdash;")
+		actionHTML := htmltemplate.HTML("&mdash;")
+		statusAction := fmt.Sprintf("/admin/users/%d/status", u.ID)
+		switch u.Status {
+		case store.UserActive:
+			actionHTML, err = components.SuspendUserAction(u.ID, statusAction, s.csrfFor(r))
+		case store.UserDisabled:
+			actionHTML, err = components.RestoreUserAction(statusAction, s.csrfFor(r))
 		}
-		sb.WriteString("</td></tr>")
+		if err != nil {
+			s.renderError(w, err)
+			return
+		}
+		table.Rows = append(table.Rows, []htmltemplate.HTML{
+			escCell(strconv.FormatInt(u.ID, 10)), escCell(u.Name), escCell(u.Email), escCell(u.Status), actionHTML,
+		})
 	}
-	sb.WriteString(`</tbody></table><p><a href="/admin">Back to admin</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - users", sb.String()))
+	body, err := components.AdminListPage(components.AdminListData{
+		Title: "Users", Lead: lead, Table: table, BackHref: "/admin", BackLabel: "Back to admin",
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - users", Body: body})
 }
 
 func (s *Server) adminUserStatus(w http.ResponseWriter, r *http.Request) {
@@ -159,22 +154,30 @@ func (s *Server) adminModerationGigs(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, err)
 		return
 	}
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Gig moderation</h1>`)
-	sb.WriteString(moderationStateFilterHTML("/admin/moderation/gigs", state))
-	if len(gigs) == 0 {
-		sb.WriteString("<p>Nothing in this queue.</p>")
-	} else {
-		sb.WriteString(`<table><thead><tr><th scope="col">ID</th><th scope="col">Title</th><th scope="col">Seller</th><th scope="col">Status</th><th scope="col">Action</th></tr></thead><tbody>`)
-		for _, g := range gigs {
-			sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td>%s</td><td>%d</td><td>%s</td><td>%s</td></tr>",
-				g.ID, html.EscapeString(g.Title), g.SellerID, html.EscapeString(g.Status),
-				moderationActionsHTML(s.csrfFor(r), fmt.Sprintf("/admin/moderation/gigs/%d", g.ID))))
-		}
-		sb.WriteString(`</tbody></table>`)
+	lead, err := components.ModerationFilterBar("/admin/moderation/gigs", state)
+	if err != nil {
+		s.renderError(w, err)
+		return
 	}
-	sb.WriteString(`<p><a href="/admin">Back to admin</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - gig moderation", sb.String()))
+	table := components.AdminTable{Columns: []string{"ID", "Title", "Seller", "Status", "Action"}}
+	for _, g := range gigs {
+		actions, err := components.ModerationActions(fmt.Sprintf("/admin/moderation/gigs/%d", g.ID), s.csrfFor(r))
+		if err != nil {
+			s.renderError(w, err)
+			return
+		}
+		table.Rows = append(table.Rows, []htmltemplate.HTML{
+			escCell(strconv.FormatInt(g.ID, 10)), escCell(g.Title), escCell(strconv.FormatInt(g.SellerID, 10)), escCell(g.Status), actions,
+		})
+	}
+	body, err := components.AdminListPage(components.AdminListData{
+		Title: "Gig moderation", Lead: lead, Table: table, BackHref: "/admin", BackLabel: "Back to admin",
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - gig moderation", Body: body})
 }
 
 func (s *Server) adminModerationGigDecide(w http.ResponseWriter, r *http.Request) {
@@ -206,22 +209,32 @@ func (s *Server) adminModerationMedia(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, err)
 		return
 	}
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Media moderation</h1>`)
-	sb.WriteString(moderationStateFilterHTML("/admin/moderation/media", state))
-	if len(media) == 0 {
-		sb.WriteString("<p>Nothing in this queue.</p>")
-	} else {
-		sb.WriteString(`<table><thead><tr><th scope="col">ID</th><th scope="col">Gig</th><th scope="col">Image</th><th scope="col">Action</th></tr></thead><tbody>`)
-		for _, m := range media {
-			sb.WriteString(fmt.Sprintf(`<tr><td>%d</td><td>%s</td><td><img src="%s" alt="%s" width="120" height="90" loading="lazy"></td><td>%s</td></tr>`,
-				m.ID, html.EscapeString(m.GigTitle), html.EscapeString(m.MediaPath), html.EscapeString(m.AltText),
-				moderationActionsHTML(s.csrfFor(r), fmt.Sprintf("/admin/moderation/media/%d", m.ID))))
-		}
-		sb.WriteString(`</tbody></table>`)
+	lead, err := components.ModerationFilterBar("/admin/moderation/media", state)
+	if err != nil {
+		s.renderError(w, err)
+		return
 	}
-	sb.WriteString(`<p><a href="/admin">Back to admin</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - media moderation", sb.String()))
+	table := components.AdminTable{Columns: []string{"ID", "Gig", "Image", "Action"}}
+	for _, m := range media {
+		actions, err := components.ModerationActions(fmt.Sprintf("/admin/moderation/media/%d", m.ID), s.csrfFor(r))
+		if err != nil {
+			s.renderError(w, err)
+			return
+		}
+		img := htmltemplate.HTML(fmt.Sprintf(`<img src="%s" alt="%s" width="120" height="90" loading="lazy">`,
+			htmltemplate.HTMLEscapeString(m.MediaPath), htmltemplate.HTMLEscapeString(m.AltText)))
+		table.Rows = append(table.Rows, []htmltemplate.HTML{
+			escCell(strconv.FormatInt(m.ID, 10)), escCell(m.GigTitle), img, actions,
+		})
+	}
+	body, err := components.AdminListPage(components.AdminListData{
+		Title: "Media moderation", Lead: lead, Table: table, BackHref: "/admin", BackLabel: "Back to admin",
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - media moderation", Body: body})
 }
 
 func (s *Server) adminModerationMediaDecide(w http.ResponseWriter, r *http.Request) {
@@ -253,22 +266,31 @@ func (s *Server) adminModerationReviews(w http.ResponseWriter, r *http.Request) 
 		s.renderError(w, err)
 		return
 	}
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Review moderation</h1>`)
-	sb.WriteString(moderationStateFilterHTML("/admin/moderation/reviews", state))
-	if len(reviews) == 0 {
-		sb.WriteString("<p>Nothing in this queue.</p>")
-	} else {
-		sb.WriteString(`<table><thead><tr><th scope="col">ID</th><th scope="col">Order</th><th scope="col">Rating</th><th scope="col">Body</th><th scope="col">Action</th></tr></thead><tbody>`)
-		for _, rv := range reviews {
-			sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td>%d</td><td>%d</td><td>%s</td><td>%s</td></tr>",
-				rv.ID, rv.OrderID, rv.Rating, html.EscapeString(rv.Body),
-				moderationActionsHTML(s.csrfFor(r), fmt.Sprintf("/admin/moderation/reviews/%d", rv.ID))))
-		}
-		sb.WriteString(`</tbody></table>`)
+	lead, err := components.ModerationFilterBar("/admin/moderation/reviews", state)
+	if err != nil {
+		s.renderError(w, err)
+		return
 	}
-	sb.WriteString(`<p><a href="/admin">Back to admin</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - review moderation", sb.String()))
+	table := components.AdminTable{Columns: []string{"ID", "Order", "Rating", "Body", "Action"}}
+	for _, rv := range reviews {
+		actions, err := components.ModerationActions(fmt.Sprintf("/admin/moderation/reviews/%d", rv.ID), s.csrfFor(r))
+		if err != nil {
+			s.renderError(w, err)
+			return
+		}
+		table.Rows = append(table.Rows, []htmltemplate.HTML{
+			escCell(strconv.FormatInt(rv.ID, 10)), escCell(strconv.FormatInt(rv.OrderID, 10)),
+			escCell(strconv.Itoa(rv.Rating)), escCell(rv.Body), actions,
+		})
+	}
+	body, err := components.AdminListPage(components.AdminListData{
+		Title: "Review moderation", Lead: lead, Table: table, BackHref: "/admin", BackLabel: "Back to admin",
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - review moderation", Body: body})
 }
 
 func (s *Server) adminModerationReviewDecide(w http.ResponseWriter, r *http.Request) {
@@ -303,21 +325,38 @@ func (s *Server) adminModerationMessages(w http.ResponseWriter, r *http.Request)
 		s.renderError(w, err)
 		return
 	}
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Message moderation</h1>
-<form method="get" action="/admin/moderation/messages">
-<label for="order_id">Order ID</label>
-<input id="order_id" name="order_id" type="number" min="1">
-<button class="btn" type="submit">Filter</button>
-</form>
-<table><thead><tr><th scope="col">ID</th><th scope="col">Order</th><th scope="col">Sender</th><th scope="col">Body</th><th scope="col">Action</th></tr></thead><tbody>`)
-	for _, m := range messages {
-		action := fmt.Sprintf(`<form method="post" action="/admin/moderation/messages/%d/hide" novalidate>%s<button class="btn" type="submit">Hide</button></form>`, m.ID, csrfInputHTML(s.csrfFor(r)))
-		sb.WriteString(fmt.Sprintf("<tr><td>%d</td><td><a href=\"/orders/%d\">%d</a></td><td>%s</td><td>%s</td><td>%s</td></tr>",
-			m.ID, m.OrderID, m.OrderID, html.EscapeString(m.SenderName), html.EscapeString(m.Body), action))
+	orderIDValue := ""
+	if orderID != 0 {
+		orderIDValue = strconv.FormatInt(orderID, 10)
 	}
-	sb.WriteString(`</tbody></table><p><a href="/admin">Back to admin</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - message moderation", sb.String()))
+	lead, err := components.FilterFormHTML(components.FilterForm{
+		Action: "/admin/moderation/messages",
+		Fields: []components.FilterField{{Name: "order_id", Label: "Order ID", Value: orderIDValue}},
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	table := components.AdminTable{Columns: []string{"ID", "Order", "Sender", "Body", "Action"}}
+	for _, m := range messages {
+		action, err := components.HideAction(fmt.Sprintf("/admin/moderation/messages/%d/hide", m.ID), s.csrfFor(r))
+		if err != nil {
+			s.renderError(w, err)
+			return
+		}
+		orderLink := htmltemplate.HTML(fmt.Sprintf(`<a href="/orders/%d">%d</a>`, m.OrderID, m.OrderID))
+		table.Rows = append(table.Rows, []htmltemplate.HTML{
+			escCell(strconv.FormatInt(m.ID, 10)), orderLink, escCell(m.SenderName), escCell(m.Body), action,
+		})
+	}
+	body, err := components.AdminListPage(components.AdminListData{
+		Title: "Message moderation", Lead: lead, Table: table, BackHref: "/admin", BackLabel: "Back to admin",
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - message moderation", Body: body})
 }
 
 func (s *Server) adminModerationMessageHide(w http.ResponseWriter, r *http.Request) {
@@ -347,21 +386,23 @@ func (s *Server) adminDisputes(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, err)
 		return
 	}
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Disputes</h1>
-<p><a href="/admin/disputes?status=open">Open</a> | <a href="/admin/disputes?status=resolved">Resolved</a></p>`)
-	if len(disputes) == 0 {
-		sb.WriteString("<p>No disputes in this state.</p>")
-	} else {
-		sb.WriteString(`<table><thead><tr><th scope="col">ID</th><th scope="col">Order</th><th scope="col">Reason</th><th scope="col">Status</th><th scope="col"></th></tr></thead><tbody>`)
-		for _, d := range disputes {
-			sb.WriteString(fmt.Sprintf(`<tr><td>%d</td><td><a href="/orders/%d">%d</a></td><td>%s</td><td>%s</td><td><a href="/admin/disputes/%d">Review</a></td></tr>`,
-				d.ID, d.OrderID, d.OrderID, html.EscapeString(d.Reason), html.EscapeString(d.Status), d.ID))
-		}
-		sb.WriteString(`</tbody></table>`)
+	lead := htmltemplate.HTML(`<p><a href="/admin/disputes?status=open">Open</a> | <a href="/admin/disputes?status=resolved">Resolved</a></p>`)
+	table := components.AdminTable{Columns: []string{"ID", "Order", "Reason", "Status", ""}}
+	for _, d := range disputes {
+		orderLink := htmltemplate.HTML(fmt.Sprintf(`<a href="/orders/%d">%d</a>`, d.OrderID, d.OrderID))
+		reviewLink := htmltemplate.HTML(fmt.Sprintf(`<a href="/admin/disputes/%d">Review</a>`, d.ID))
+		table.Rows = append(table.Rows, []htmltemplate.HTML{
+			escCell(strconv.FormatInt(d.ID, 10)), orderLink, escCell(d.Reason), escCell(d.Status), reviewLink,
+		})
 	}
-	sb.WriteString(`<p><a href="/admin">Back to admin</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - disputes", sb.String()))
+	body, err := components.AdminListPage(components.AdminListData{
+		Title: "Disputes", Lead: lead, Table: table, BackHref: "/admin", BackLabel: "Back to admin",
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - disputes", Body: body})
 }
 
 // adminDisputeDetail shows a single dispute with its evidence (dispute
@@ -388,46 +429,19 @@ func (s *Server) adminDisputeDetail(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(`<section class="container"><h1>Dispute #%d</h1>
-<dl>
-<dt>Order</dt><dd><a href="/orders/%d">#%d</a></dd>
-<dt>Opened by user</dt><dd>%d</dd>
-<dt>Reason</dt><dd>%s</dd>
-<dt>Status</dt><dd>%s</dd>
-<dt>Decision</dt><dd>%s</dd>
-</dl>`, d.ID, d.OrderID, d.OrderID, d.OpenedBy, html.EscapeString(d.Reason), html.EscapeString(d.Status), html.EscapeString(d.Decision)))
-
-	sb.WriteString("<h2>Evidence</h2>")
-	if len(evidence) == 0 {
-		sb.WriteString("<p>No evidence uploaded.</p>")
-	} else {
-		sb.WriteString("<ul>")
-		for _, a := range evidence {
-			sb.WriteString(fmt.Sprintf(`<li><a href="/orders/%d/attachments/%d">%s</a></li>`, d.OrderID, a.ID, html.EscapeString(a.FileName)))
-		}
-		sb.WriteString("</ul>")
+	data := components.AdminDisputeDetailData{
+		ID: d.ID, OrderID: d.OrderID, OpenedBy: d.OpenedBy, Reason: d.Reason, Status: d.Status,
+		Decision: d.Decision, CSRF: s.csrfFor(r), InternalNotes: d.InternalNotes, Open: d.Status == store.DisputeOpen,
 	}
-
-	sb.WriteString(fmt.Sprintf(`<h2>Internal notes</h2>
-<form method="post" action="/admin/disputes/%d/notes" novalidate>
-%s
-<label for="notes">Notes (never shown to buyer or seller)</label>
-<textarea id="notes" name="notes" rows="4">%s</textarea>
-<button class="btn" type="submit">Save notes</button>
-</form>`, d.ID, csrfInputHTML(s.csrfFor(r)), html.EscapeString(d.InternalNotes)))
-
-	if d.Status == store.DisputeOpen {
-		sb.WriteString(fmt.Sprintf(`<h2>Resolve</h2>
-<form method="post" action="/orders/%d/dispute/resolve" novalidate>
-%s
-<label for="decision">Decision (shown to buyer and seller)</label>
-<textarea id="decision" name="decision" rows="4" required></textarea>
-<button class="btn" type="submit">Resolve dispute</button>
-</form>`, d.OrderID, csrfInputHTML(s.csrfFor(r))))
+	for _, a := range evidence {
+		data.Evidence = append(data.Evidence, components.AdminDisputeEvidence{ID: a.ID, FileName: a.FileName})
 	}
-	sb.WriteString(`<p><a href="/admin/disputes">Back to disputes</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody(fmt.Sprintf("Admin - dispute #%d", d.ID), sb.String()))
+	body, err := components.AdminDisputeDetailPage(data)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: fmt.Sprintf("Admin - dispute #%d", d.ID), Body: body})
 }
 
 func (s *Server) adminDisputeNotes(w http.ResponseWriter, r *http.Request) {
@@ -457,33 +471,38 @@ func (s *Server) adminDisputeNotes(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) adminPaymentSearch(w http.ResponseWriter, r *http.Request) {
 	q := strings.TrimSpace(r.URL.Query().Get("q"))
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Payment search</h1>
-<form method="get" action="/admin/payments/search" role="search">
-<label for="q">Order ID, payment ID, or provider reference</label>
-<input id="q" name="q" type="search" value="` + html.EscapeString(q) + `">
-<button class="btn" type="submit">Search</button>
-</form>`)
+	lead, err := components.FilterFormHTML(components.FilterForm{
+		Action: "/admin/payments/search",
+		Fields: []components.FilterField{{Name: "q", Label: "Order ID, payment ID, or provider reference", Value: q}},
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	table := components.AdminTable{Columns: []string{"Intent ID", "Order", "Provider", "Status", "Amount", ""}}
 	if q != "" {
 		intents, err := s.Store.SearchPaymentIntents(r.Context(), q, 25)
 		if err != nil {
 			s.renderError(w, err)
 			return
 		}
-		if len(intents) == 0 {
-			sb.WriteString("<p>No matches.</p>")
-		} else {
-			sb.WriteString(`<table><thead><tr><th scope="col">Intent ID</th><th scope="col">Order</th><th scope="col">Provider</th><th scope="col">Status</th><th scope="col">Amount</th><th scope="col"></th></tr></thead><tbody>`)
-			for _, in := range intents {
-				currency := strings.ToUpper(in.Currency)
-				sb.WriteString(fmt.Sprintf(`<tr><td>%d</td><td>%d</td><td>%s</td><td>%s</td><td>%s</td><td><a href="/admin/orders/%d/timeline">Timeline</a></td></tr>`,
-					in.ID, in.OrderID, html.EscapeString(in.Provider), html.EscapeString(in.Status), html.EscapeString(formatMoney(in.AmountMinor, currency)), in.OrderID))
-			}
-			sb.WriteString(`</tbody></table>`)
+		for _, in := range intents {
+			currency := strings.ToUpper(in.Currency)
+			timelineLink := htmltemplate.HTML(fmt.Sprintf(`<a href="/admin/orders/%d/timeline">Timeline</a>`, in.OrderID))
+			table.Rows = append(table.Rows, []htmltemplate.HTML{
+				escCell(strconv.FormatInt(in.ID, 10)), escCell(strconv.FormatInt(in.OrderID, 10)),
+				escCell(in.Provider), escCell(in.Status), escCell(formatMoney(in.AmountMinor, currency)), timelineLink,
+			})
 		}
 	}
-	sb.WriteString(`<p><a href="/admin">Back to admin</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - payment search", sb.String()))
+	body, err := components.AdminListPage(components.AdminListData{
+		Title: "Payment search", Lead: lead, Table: table, BackHref: "/admin", BackLabel: "Back to admin",
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - payment search", Body: body})
 }
 
 // adminOrderTimeline shows the full attempt/webhook history for an order's
@@ -497,8 +516,12 @@ func (s *Server) adminOrderTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	intent, err := s.Store.LatestPaymentIntentForOrder(r.Context(), orderID)
 	if errors.Is(err, store.ErrNotFound) {
-		s.render(w, r, http.StatusOK, pageWithRawBody("Admin - order timeline",
-			fmt.Sprintf(`<section class="container"><h1>Order #%d timeline</h1><p>No payment intent yet.</p></section>`, orderID)))
+		body, err := components.AdminOrderTimelinePage(components.AdminOrderTimelineData{OrderID: orderID})
+		if err != nil {
+			s.renderError(w, err)
+			return
+		}
+		s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - order timeline", Body: body})
 		return
 	}
 	if err != nil {
@@ -512,37 +535,26 @@ func (s *Server) adminOrderTimeline(w http.ResponseWriter, r *http.Request) {
 	}
 	events, _ := s.Store.ListWebhookEventsForOrder(r.Context(), orderID)
 
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf(`<section class="container"><h1>Order #%d timeline</h1>
-<h2>Payment intent %d</h2>
-<dl><dt>Provider</dt><dd>%s</dd><dt>Status</dt><dd>%s</dd><dt>Created</dt><dd>%s</dd></dl>`,
-		orderID, intent.ID, html.EscapeString(intent.Provider), html.EscapeString(intent.Status), intent.CreatedAt.Format("2006-01-02 15:04:05")))
-
-	sb.WriteString("<h2>Attempt history</h2>")
-	if len(attempts) == 0 {
-		sb.WriteString("<p>No recorded attempts.</p>")
-	} else {
-		sb.WriteString(`<table><thead><tr><th scope="col">When</th><th scope="col">Provider status</th><th scope="col">Failure</th></tr></thead><tbody>`)
-		for _, a := range attempts {
-			sb.WriteString(fmt.Sprintf("<tr><td>%s</td><td>%s</td><td>%s</td></tr>",
-				a.CreatedAt.Format("2006-01-02 15:04:05"), html.EscapeString(a.ProviderStatus), html.EscapeString(a.FailureMessage)))
-		}
-		sb.WriteString(`</tbody></table>`)
+	data := components.AdminOrderTimelineData{
+		OrderID: orderID, HasIntent: true, IntentID: intent.ID, Provider: intent.Provider,
+		Status: intent.Status, Created: intent.CreatedAt.Format("2006-01-02 15:04:05"),
 	}
-
-	sb.WriteString("<h2>Webhook events</h2>")
-	if len(events) == 0 {
-		sb.WriteString("<p>No matched webhook events.</p>")
-	} else {
-		sb.WriteString(`<table><thead><tr><th scope="col">Event ID</th><th scope="col">Type</th><th scope="col">Status</th><th scope="col">Attempts</th></tr></thead><tbody>`)
-		for _, e := range events {
-			sb.WriteString(fmt.Sprintf("<tr><td>%s</td><td>%s</td><td>%s</td><td>%d</td></tr>",
-				html.EscapeString(e.EventID), html.EscapeString(e.EventType), html.EscapeString(e.Status), e.Attempts))
-		}
-		sb.WriteString(`</tbody></table>`)
+	for _, a := range attempts {
+		data.Attempts = append(data.Attempts, components.AdminAttemptRow{
+			When: a.CreatedAt.Format("2006-01-02 15:04:05"), Status: a.ProviderStatus, Failure: a.FailureMessage,
+		})
 	}
-	sb.WriteString(`<p><a href="/admin/payments">Back to payments</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - order timeline", sb.String()))
+	for _, e := range events {
+		data.Events = append(data.Events, components.AdminWebhookEventRow{
+			EventID: e.EventID, EventType: e.EventType, Status: e.Status, Attempts: e.Attempts,
+		})
+	}
+	body, err := components.AdminOrderTimelinePage(data)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - order timeline", Body: body})
 }
 
 // adminJobRetry resets one dead/failed job to queued so a worker picks it up
@@ -573,32 +585,18 @@ func (s *Server) adminSettings(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, err)
 		return
 	}
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Settings</h1>
-<table><thead><tr><th scope="col">Key</th><th scope="col">Value</th><th scope="col">Updated</th><th scope="col">Action</th></tr></thead><tbody>`)
+	data := components.AdminSettingsData{CSRF: s.csrfFor(r)}
 	for _, st := range settings {
-		sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>%s</td><td>%s</td><td>
-<form method="post" action="/admin/settings" novalidate>
-%s
-<input type="hidden" name="key" value="%s">
-<label for="value-%s">New value</label>
-<input id="value-%s" name="value" type="text" value="%s">
-<button class="btn" type="submit">Update</button>
-</form></td></tr>`, html.EscapeString(st.Key), html.EscapeString(st.Value), st.UpdatedAt.Format("2006-01-02 15:04"),
-			csrfInputHTML(s.csrfFor(r)), html.EscapeString(st.Key), html.EscapeString(st.Key), html.EscapeString(st.Key), html.EscapeString(st.Value)))
+		data.Settings = append(data.Settings, components.AdminSettingRow{
+			Key: st.Key, Value: st.Value, Updated: st.UpdatedAt.Format("2006-01-02 15:04"),
+		})
 	}
-	sb.WriteString(`</tbody></table>
-<h2>Add a new setting</h2>
-<form method="post" action="/admin/settings" novalidate>
-` + csrfInputHTML(s.csrfFor(r)) + `
-<label for="new-key">Key</label>
-<input id="new-key" name="key" type="text" required>
-<label for="new-value">Value</label>
-<input id="new-value" name="value" type="text">
-<button class="btn" type="submit">Add / update</button>
-</form>
-<p><a href="/admin">Back to admin</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - settings", sb.String()))
+	body, err := components.AdminSettingsPage(data)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - settings", Body: body})
 }
 
 func (s *Server) adminSettingsUpdate(w http.ResponseWriter, r *http.Request) {
@@ -637,62 +635,22 @@ func (s *Server) adminCategories(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, err)
 		return
 	}
-	csrf := csrfInputHTML(s.csrfFor(r))
 
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Categories and tags</h1><h2>Categories</h2>
-<table><thead><tr><th scope="col">Slug</th><th scope="col">Name</th><th scope="col">Description</th><th scope="col">Position</th><th scope="col">Action</th></tr></thead><tbody>`)
+	data := components.AdminCategoriesTagsData{CSRF: s.csrfFor(r)}
 	for _, c := range cats {
-		sb.WriteString(fmt.Sprintf(`<tr><td>%s</td><td>
-<form method="post" action="/admin/categories/%d" novalidate>
-%s
-<input name="name" type="text" required value="%s">
-<input name="description" type="text" value="%s">
-<input name="position" type="number" value="%d" style="width:5em">
-<button class="btn" type="submit">Save</button>
-</form></td><td></td><td></td><td>
-<form method="post" action="/admin/categories/%d/delete" novalidate>
-%s
-<button class="btn" type="submit">Delete</button>
-</form></td></tr>`,
-			html.EscapeString(c.Slug), c.ID, csrf, html.EscapeString(c.Name), html.EscapeString(c.Description), c.Position,
-			c.ID, csrf))
-	}
-	sb.WriteString(`</tbody></table>
-<h3>Add a category</h3>
-<form method="post" action="/admin/categories" novalidate>
-` + csrf + `
-<label for="new-cat-slug">Slug</label>
-<input id="new-cat-slug" name="slug" type="text" required pattern="[a-z0-9-]+">
-<label for="new-cat-name">Name</label>
-<input id="new-cat-name" name="name" type="text" required>
-<label for="new-cat-desc">Description</label>
-<input id="new-cat-desc" name="description" type="text">
-<label for="new-cat-pos">Position</label>
-<input id="new-cat-pos" name="position" type="number" value="0" style="width:5em">
-<button class="btn" type="submit">Add category</button>
-</form>
-
-<h2>Tags</h2>
-<table><thead><tr><th scope="col">Tag</th><th scope="col">Gigs using it</th><th scope="col">Action</th></tr></thead><tbody>`)
-	if len(tags) == 0 {
-		sb.WriteString(`<tr><td colspan="3">No tags yet.</td></tr>`)
+		data.Categories = append(data.Categories, components.AdminCategoryRow{
+			ID: c.ID, Slug: c.Slug, Name: c.Name, Description: c.Description, Position: c.Position,
+		})
 	}
 	for _, t := range tags {
-		sb.WriteString(fmt.Sprintf(`<tr><td>
-<form method="post" action="/admin/tags/%d" novalidate>
-%s
-<input name="name" type="text" required value="%s">
-<button class="btn" type="submit">Rename</button>
-</form></td><td>%d</td><td>
-<form method="post" action="/admin/tags/%d/delete" novalidate>
-%s
-<button class="btn" type="submit">Delete</button>
-</form></td></tr>`, t.ID, csrf, html.EscapeString(t.Name), t.GigCount, t.ID, csrf))
+		data.Tags = append(data.Tags, components.AdminTagRow{ID: t.ID, Name: t.Name, GigCount: t.GigCount})
 	}
-	sb.WriteString(`</tbody></table>
-<p><a href="/admin">Back to admin</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - categories and tags", sb.String()))
+	body, err := components.AdminCategoriesTagsPage(data)
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - categories and tags", Body: body})
 }
 
 func (s *Server) adminCategoryCreate(w http.ResponseWriter, r *http.Request) {
@@ -832,21 +790,26 @@ func (s *Server) adminAuditLog(w http.ResponseWriter, r *http.Request) {
 		s.renderError(w, err)
 		return
 	}
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Audit log</h1>
-<p><a href="/admin/audit/export.csv">Export CSV</a></p>
-<table><thead><tr><th scope="col">When</th><th scope="col">Actor</th><th scope="col">Action</th><th scope="col">Entity</th></tr></thead><tbody>`)
+	lead := htmltemplate.HTML(`<p><a href="/admin/audit/export.csv">Export CSV</a></p>`)
+	table := components.AdminTable{Columns: []string{"When", "Actor", "Action", "Entity"}}
 	for _, l := range logs {
 		actor := "system"
 		if l.ActorUserID != nil {
 			actor = strconv.FormatInt(*l.ActorUserID, 10)
 		}
-		sb.WriteString(fmt.Sprintf("<tr><td>%s</td><td>%s</td><td>%s</td><td>%s %s</td></tr>",
-			l.CreatedAt.Format("2006-01-02 15:04:05"), html.EscapeString(actor), html.EscapeString(l.Action),
-			html.EscapeString(l.EntityType), html.EscapeString(l.EntityID)))
+		table.Rows = append(table.Rows, []htmltemplate.HTML{
+			escCell(l.CreatedAt.Format("2006-01-02 15:04:05")), escCell(actor), escCell(l.Action),
+			escCell(l.EntityType + " " + l.EntityID),
+		})
 	}
-	sb.WriteString(`</tbody></table><p><a href="/admin">Back to admin</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - audit log", sb.String()))
+	body, err := components.AdminListPage(components.AdminListData{
+		Title: "Audit log", Lead: lead, Table: table, BackHref: "/admin", BackLabel: "Back to admin",
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
+	}
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - audit log", Body: body})
 }
 
 func (s *Server) adminAuditExport(w http.ResponseWriter, r *http.Request) {
@@ -884,38 +847,14 @@ var ledgerAccountKinds = []string{
 // permissioned manual adjustment tool (PLAN.md section 12; TODO.md Phase 5
 // "Implement audited, permissioned manual adjustments with reason").
 func (s *Server) adminLedgerAdjustForm(w http.ResponseWriter, r *http.Request) {
-	var sb strings.Builder
-	sb.WriteString(`<section class="container"><h1>Ledger adjustment</h1>
-<p class="help">Moves funds between two ledger accounts with a required reason. Every adjustment is recorded in the audit log and posted as a balanced double-entry transaction; there is no undo.</p>
-<form method="post" action="/admin/ledger/adjust" novalidate>` + csrfInputHTML(s.csrfFor(r)))
-	sb.WriteString(`<fieldset><legend>From account</legend>
-<label for="from_kind">Kind</label><select id="from_kind" name="from_kind">`)
-	for _, k := range ledgerAccountKinds {
-		sb.WriteString(fmt.Sprintf(`<option value="%s">%s</option>`, k, k))
+	body, err := components.AdminLedgerAdjustPage(components.AdminLedgerAdjustData{
+		CSRF: s.csrfFor(r), AccountKinds: ledgerAccountKinds,
+	})
+	if err != nil {
+		s.renderError(w, err)
+		return
 	}
-	sb.WriteString(`</select>
-<label for="from_owner">Owner user ID (blank for platform accounts)</label>
-<input id="from_owner" name="from_owner" type="number" min="1"></fieldset>`)
-	sb.WriteString(`<fieldset><legend>To account</legend>
-<label for="to_kind">Kind</label><select id="to_kind" name="to_kind">`)
-	for _, k := range ledgerAccountKinds {
-		sb.WriteString(fmt.Sprintf(`<option value="%s">%s</option>`, k, k))
-	}
-	sb.WriteString(`</select>
-<label for="to_owner">Owner user ID (blank for platform accounts)</label>
-<input id="to_owner" name="to_owner" type="number" min="1"></fieldset>`)
-	sb.WriteString(`<label for="amount">Amount (minor units)</label>
-<input id="amount" name="amount" type="number" min="1" required>
-<label for="currency">Currency</label>
-<input id="currency" name="currency" type="text" value="usd" required>
-<label for="order_id">Related order ID (optional)</label>
-<input id="order_id" name="order_id" type="number" min="1">
-<label for="reason">Reason</label>
-<input id="reason" name="reason" type="text" maxlength="500" required>
-<button class="btn" type="submit">Post adjustment</button>
-</form>
-<p><a href="/admin">Back to admin</a></p></section>`)
-	s.render(w, r, http.StatusOK, pageWithRawBody("Admin - ledger adjustment", sb.String()))
+	s.render(w, r, http.StatusOK, components.PageData{Title: "Admin - ledger adjustment", Body: body})
 }
 
 func (s *Server) adminLedgerAdjust(w http.ResponseWriter, r *http.Request) {
@@ -984,29 +923,6 @@ func moderationDecision(r *http.Request) (string, bool) {
 	default:
 		return "", false
 	}
-}
-
-func moderationStateFilterHTML(base, current string) string {
-	var sb strings.Builder
-	sb.WriteString("<p>")
-	for i, st := range []string{"pending", "approved", "rejected"} {
-		if i > 0 {
-			sb.WriteString(" | ")
-		}
-		if st == current {
-			sb.WriteString(fmt.Sprintf("<strong>%s</strong>", st))
-		} else {
-			sb.WriteString(fmt.Sprintf(`<a href="%s?state=%s">%s</a>`, base, st, st))
-		}
-	}
-	sb.WriteString("</p>")
-	return sb.String()
-}
-
-func moderationActionsHTML(csrf, action string) string {
-	return fmt.Sprintf(`<form method="post" action="%s" novalidate>%s<input type="hidden" name="decision" value="approve"><button class="btn" type="submit">Approve</button></form>
-<form method="post" action="%s" novalidate>%s<input type="hidden" name="decision" value="reject"><button class="btn" type="submit">Reject</button></form>`,
-		action, csrfInputHTML(csrf), action, csrfInputHTML(csrf))
 }
 
 func parseOptionalID(v string) *int64 {

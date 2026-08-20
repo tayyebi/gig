@@ -1,0 +1,87 @@
+{{define "admincategoriestags"}}
+<section class="container">
+  <h1>Categories and tags</h1>
+  <h2>Categories</h2>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">Slug</th><th scope="col">Name / description / position</th><th scope="col">Delete</th></tr></thead>
+    <tbody>
+    {{range .Categories}}
+    <tr>
+      <td>{{.Slug}}</td>
+      <td>
+        <form method="post" action="/admin/categories/{{.ID}}" class="inline-form" novalidate>
+          {{template "csrffield" $.CSRF}}
+          <input name="name" type="text" required value="{{.Name}}">
+          <input name="description" type="text" value="{{.Description}}">
+          <input name="position" type="number" value="{{.Position}}" style="width:5em">
+          <button class="btn" type="submit">Save</button>
+        </form>
+      </td>
+      <td>
+        <form method="post" action="/admin/categories/{{.ID}}/delete" class="inline-form" novalidate>
+          {{template "csrffield" $.CSRF}}
+          <button class="btn" type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+
+  <h3>Add a category</h3>
+  <form method="post" action="/admin/categories" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "slug"}}">Slug</label>
+      <input id="{{fieldid "slug"}}" name="slug" type="text" required pattern="[a-z0-9-]+">
+    </div>
+    <div class="field">
+      <label for="{{fieldid "name"}}">Name</label>
+      <input id="{{fieldid "name"}}" name="name" type="text" required>
+    </div>
+    <div class="field">
+      <label for="{{fieldid "description"}}">Description</label>
+      <input id="{{fieldid "description"}}" name="description" type="text">
+    </div>
+    <div class="field">
+      <label for="{{fieldid "position"}}">Position</label>
+      <input id="{{fieldid "position"}}" name="position" type="number" value="0" style="width:5em">
+    </div>
+    <button class="btn btn-primary" type="submit">Add category</button>
+  </form>
+
+  <h2>Tags</h2>
+  {{if not .Tags}}
+  <p class="muted">No tags yet.</p>
+  {{else}}
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">Tag</th><th scope="col">Gigs using it</th><th scope="col">Delete</th></tr></thead>
+    <tbody>
+    {{range .Tags}}
+    <tr>
+      <td>
+        <form method="post" action="/admin/tags/{{.ID}}" class="inline-form" novalidate>
+          {{template "csrffield" $.CSRF}}
+          <input name="name" type="text" required value="{{.Name}}">
+          <button class="btn" type="submit">Rename</button>
+        </form>
+      </td>
+      <td>{{.GigCount}}</td>
+      <td>
+        <form method="post" action="/admin/tags/{{.ID}}/delete" class="inline-form" novalidate>
+          {{template "csrffield" $.CSRF}}
+          <button class="btn" type="submit">Delete</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+  {{end}}
+  <p><a href="/admin">Back to admin</a></p>
+</section>
+{{end}}

@@ -1,0 +1,11 @@
+{{define "evmdeposit"}}
+<section class="container">
+  <h1>Stablecoin deposit</h1>
+  <p>Status: {{.StatusText}}</p>
+  <p>Send exactly <strong>{{.AmountText}}</strong> worth of USDC to this address on {{.ChainName}}:</p>
+  {{if .QR}}<div class="qr-code">{{.QR}}</div>{{end}}
+  <p><code class="secret">{{.Address}}</code></p>
+  <p class="hint">This page refreshes automatically. Once the transfer reaches {{.Confirmations}} confirmations, order #{{.OrderID}} will move to in progress. Send only from a wallet you control, and only this exact amount &mdash; the platform cannot distinguish deposits by any other means.</p>
+  <p><a href="/orders/{{.OrderID}}">Back to order</a></p>
+</section>
+{{end}}

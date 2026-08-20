@@ -1,0 +1,43 @@
+{{define "adminsettings"}}
+<section class="container">
+  <h1>Settings</h1>
+  <div class="table-wrap">
+  <table>
+    <thead><tr><th scope="col">Key</th><th scope="col">Value</th><th scope="col">Updated</th><th scope="col">Action</th></tr></thead>
+    <tbody>
+    {{range .Settings}}
+    <tr>
+      <td>{{.Key}}</td><td>{{.Value}}</td><td>{{.Updated}}</td>
+      <td>
+        <form method="post" action="/admin/settings" novalidate>
+          {{template "csrffield" $.CSRF}}
+          <input type="hidden" name="key" value="{{.Key}}">
+          <div class="field">
+            <label for="{{fieldid (printf "value-%s" .Key)}}">New value</label>
+            <input id="{{fieldid (printf "value-%s" .Key)}}" name="value" type="text" value="{{.Value}}">
+          </div>
+          <button class="btn" type="submit">Update</button>
+        </form>
+      </td>
+    </tr>
+    {{end}}
+    </tbody>
+  </table>
+  </div>
+
+  <h2>Add a new setting</h2>
+  <form method="post" action="/admin/settings" novalidate>
+    {{template "csrffield" .CSRF}}
+    <div class="field">
+      <label for="{{fieldid "new-key"}}">Key</label>
+      <input id="{{fieldid "new-key"}}" name="key" type="text" required>
+    </div>
+    <div class="field">
+      <label for="{{fieldid "new-value"}}">Value</label>
+      <input id="{{fieldid "new-value"}}" name="value" type="text">
+    </div>
+    <button class="btn btn-primary" type="submit">Add / update</button>
+  </form>
+  <p><a href="/admin">Back to admin</a></p>
+</section>
+{{end}}
